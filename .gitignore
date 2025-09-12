@@ -1,0 +1,27 @@
+idc-backend/.env
+idc-backend/idc
+
+# macOS
+.DS_Store
+
+# Node/React (frontend)
+idc-operations-hub/node_modules/
+idc-operations-hub/dist/
+idc-operations-hub/build/
+idc-operations-hub/.env
+idc-operations-hub/.env.local
+idc-operations-hub/.env.*.local
+
+# Python (backend)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+server.log
+.coverage
+
+databasetest.py

@@ -11,9 +11,11 @@ import { SuppliersPage } from "./components/SuppliersPage";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { LoginPage } from "./components/LoginPage";
 
 export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null;
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -61,6 +63,10 @@ export default function App() {
       <TransactionsTable mode={dashboardMode as any} />
     </div>
   );
+
+  if (!token) {
+    return <LoginPage onSuccess={() => window.location.reload()} />;
+  }
 
   return (
     <div className="relative flex flex-col h-screen overflow-hidden font-sans">

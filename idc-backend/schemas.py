@@ -3,6 +3,52 @@ from pydantic import BaseModel, Field
 from datetime import date
 
 
+# Employee schemas
+from datetime import datetime
+
+
+class EmployeeBase(BaseModel):
+	"""
+	Base schema for Employee, including fields for future QuickBooks/payroll/invoice integration.
+	"""
+	name: str
+	email: str
+	role: str
+	# Placeholders for future QuickBooks/payroll/invoice fields
+	quickbooks_employee_id: Optional[str] = None
+	payroll_info: Optional[str] = None
+	invoice_mapping: Optional[str] = None
+
+
+class EmployeeCreate(EmployeeBase):
+	"""
+	Schema for creating a new employee (includes password).
+	"""
+	password: str
+
+
+class EmployeeOut(EmployeeBase):
+	"""
+	Output schema for Employee, including id and created_at.
+	"""
+	id: int
+	created_at: datetime
+
+	class Config:
+		from_attributes = True
+
+
+class EmployeeJWTClaims(BaseModel):
+	"""
+	JWT claims for Employee tokens. Extendable for QuickBooks fields.
+	"""
+	id: int
+	name: str
+	email: str
+	role: str
+	# Add more fields as needed for JWT payload
+
+
 class TransactionCreate(BaseModel):
 	client_id: int
 	rfq_number: Optional[str] = None

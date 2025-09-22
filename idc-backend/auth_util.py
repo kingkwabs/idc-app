@@ -12,12 +12,15 @@ def get_jwt_secret() -> str:
 	return secret
 
 
-def create_access_token(sub: str, ttl_seconds: int = 24 * 3600) -> str:
+
+def create_access_token(sub: str, ttl_seconds: int = 24 * 3600, extra_claims: dict = None) -> str:
 	payload = {
 		"sub": sub,
 		"iat": int(time.time()),
 		"exp": int(time.time()) + ttl_seconds,
 	}
+	if extra_claims:
+		payload.update(extra_claims)
 	return jwt.encode(payload, get_jwt_secret(), algorithm="HS256")
 
 

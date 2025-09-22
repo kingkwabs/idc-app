@@ -5,6 +5,25 @@ from datetime import datetime
 Base = declarative_base()
 
 
+class Employee(Base):
+	"""
+	Employee model for authentication and access control.
+	Includes placeholders for future QuickBooks/payroll/invoice integration.
+	"""
+	__tablename__ = "employees"
+
+	id = Column(Integer, primary_key=True)
+	name = Column(String, nullable=False)
+	email = Column(String, unique=True, nullable=False)
+	password_hash = Column(String, nullable=False)
+	role = Column(String, nullable=False)
+	created_at = Column(DateTime, default=datetime.utcnow)
+	# Placeholders for future QuickBooks/payroll/invoice fields
+	quickbooks_employee_id = Column(String, nullable=True)
+	payroll_info = Column(String, nullable=True)
+	invoice_mapping = Column(String, nullable=True)
+
+
 class Client(Base):
 	__tablename__ = "clients"
 

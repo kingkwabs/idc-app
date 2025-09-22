@@ -13,3 +13,4 @@ numpy==1.26.*
 openpyxl==3.1.5
 PyJWT==2.9.0
 gunicorn==21.2.0
+bcrypt==4.1.2

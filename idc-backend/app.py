@@ -37,28 +37,6 @@ app.register_blueprint(auth_bp)
 def health_check():
 	return jsonify({"status": "ok"}), 200
 
-@app.route('/debug/schema', methods=['GET'])
-def debug_schema():
-	"""Temporary endpoint to inspect database schema (remove in production)."""
-	from sqlalchemy import inspect
-	try:
-		engine = get_engine()
-		inspector = inspect(engine)
-		tables = inspector.get_table_names()
-		schema = {}
-		for table in tables:
-			columns = []
-			for col in inspector.get_columns(table):
-				columns.append({
-					"name": col["name"],
-					"type": str(col["type"]),
-					"nullable": col["nullable"]
-				})
-			schema[table] = columns
-		return jsonify({"tables": tables, "schema": schema}), 200
-	except Exception as e:
-		return jsonify({"error": str(e)}), 500
-
 # Legacy demo endpoint kept for compatibility (prefer blueprint)
 @app.route('/api/transactions', methods=['POST'])
 def create_transaction_legacy():

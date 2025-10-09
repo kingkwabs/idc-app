@@ -1,4 +1,15 @@
+from flask import Blueprint, request, jsonify
+from datetime import datetime
+import bcrypt
+
+from auth_util import create_access_token
+from database import db_session
+from models import Employee
 from schemas import EmployeeCreate
+
+bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+
 @bp.post('/signup')
 def signup():
 	"""
@@ -35,16 +46,6 @@ def signup():
 		}
 		token = create_access_token(sub=str(new_emp.id), extra_claims=claims)
 		return jsonify({"access_token": token, "employee": claims})
-from flask import Blueprint, request, jsonify
-
-from auth_util import create_access_token
-from database import db_session
-from models import Employee
-import bcrypt
-from datetime import datetime
-
-bp = Blueprint('auth', __name__, url_prefix='/auth')
-
 
 
 @bp.post('/login')
@@ -78,4 +79,3 @@ def login():
 		}
 		token = create_access_token(sub=str(user.id), extra_claims=claims)
 		return jsonify({"access_token": token})
-

@@ -46,3 +46,34 @@ def require_auth_or_401():
 	except Exception:
 		return jsonify({"error": "invalid_token"}), 401
 
+
+def require_role(required_role: str):
+	"""
+	Decorator to require a specific role for an endpoint.
+	Usage: @require_role('admin')
+	"""
+	def decorator(f):
+		from functools import wraps
+		@wraps(f)
+		def wrapper(*args, **kwargs):
+			auth_result = require_auth_or_401()
+			# If auth failed, return the error response
+			if isinstance(auth_result, tuple):
+				return auth_result
+			# Check role
+			user_role = auth_result.get('role')
+			if user_role != required_role:
+				return jsonify({"error": "forbidden", "message": f"Requires {required_role} role"}), 403
+			# Pass the user payload to the route
+			return f(auth_result, *args, **kwargs)
+		return wrapper
+	return decorator
+
+
+def require_admin(f):
+	"""
+	Decorator to require admin role for an endpoint.
+	Usage: @require_admin
+	"""
+	return require_role('admin')(f)
+

@@ -1,16 +1,18 @@
-import { LayoutDashboard, Users, Truck, Wallet, UserCheck } from "lucide-react";
+import { LayoutDashboard, Users, Truck, Wallet, UserCheck, UserCog } from "lucide-react";
 
-type View = 
+type View =
   | "dashboard"
   | "transaction-detail"
   | "clients"
-  | "suppliers";
+  | "suppliers"
+  | "employees";
 
   interface SidebarProps {
     currentView: View;
     onViewChange: (view: View) => void;
+    userRole?: string;
   }
-  
+
 
 const navItems = [
   { name: "Dashboard", icon: LayoutDashboard, view: "dashboard" as View},
@@ -20,12 +22,20 @@ const navItems = [
   { name: "HR/Payroll", icon: UserCheck, view: "dashboard" as View },
 ];
 
-export function Sidebar({ currentView, onViewChange }: SidebarProps) {
+const adminNavItems = [
+  { name: "Employees", icon: UserCog, view: "employees" as View, adminOnly: true },
+];
+
+export function Sidebar({ currentView, onViewChange, userRole }: SidebarProps) {
+  const allNavItems = userRole === 'admin'
+    ? [...navItems, ...adminNavItems]
+    : navItems;
+
   return (
     <aside className="relative z-40 w-64 h-full glass-sidebar">
       <nav className="p-4">
         <ul className="space-y-2">
-          {navItems.map((item) => {
+          {allNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentView === item.view;
             return (

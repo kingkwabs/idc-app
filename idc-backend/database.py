@@ -77,7 +77,18 @@ def get_engine():
 	dbname = creds.get("dbname", "postgres")
 
 	connection_uri = f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{dbname}"
-	_engine = create_engine(connection_uri, pool_pre_ping=True)
+	_engine = create_engine(
+		connection_uri,
+		pool_pre_ping=True,  # Verify connections before using
+		pool_size=10,  # Keep 10 connections in pool
+		max_overflow=20,  # Allow up to 20 additional connections
+		pool_recycle=3600,  # Recycle connections after 1 hour
+		pool_timeout=30,  # Wait 30s for connection from pool
+		connect_args={
+			"connect_timeout": 10,  # 10s connection timeout
+			"options": "-c statement_timeout=30000"  # 30s query timeout
+		}
+	)
 	_SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 	return _engine
 

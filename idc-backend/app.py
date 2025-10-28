@@ -35,7 +35,15 @@ app.register_blueprint(auth_bp)
 
 @app.route('/health', methods=['GET'])
 def health_check():
-	return jsonify({"status": "ok"}), 200
+	"""Health check endpoint that also pings the database to keep it warm."""
+	try:
+		from database import db_session
+		with db_session() as session:
+			# Simple query to keep database connection alive
+			session.execute("SELECT 1")
+		return jsonify({"status": "ok", "database": "connected"}), 200
+	except Exception as e:
+		return jsonify({"status": "degraded", "database": "error", "message": str(e)}), 503
 
 # Legacy demo endpoint kept for compatibility (prefer blueprint)
 @app.route('/api/transactions', methods=['POST'])

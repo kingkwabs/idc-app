@@ -13,6 +13,7 @@ from routes_clients import bp as clients_bp
 from routes_transaction_extras import bp as trx_extras_bp
 from routes_suppliers import bp as suppliers_bp
 from routes_auth import bp as auth_bp
+from routes_quickbooks import bp as quickbooks_bp
 from models import Base
 
 app = Flask(__name__)
@@ -32,6 +33,7 @@ app.register_blueprint(clients_bp)
 app.register_blueprint(trx_extras_bp)
 app.register_blueprint(suppliers_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(quickbooks_bp)
 
 @app.route('/health', methods=['GET'])
 def health_check():

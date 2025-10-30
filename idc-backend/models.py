@@ -29,6 +29,8 @@ class Client(Base):
 
 	id = Column(Integer, primary_key=True)
 	name = Column(String, unique=True, nullable=False)
+	# QuickBooks integration
+	quickbooks_customer_id = Column(String, nullable=True)  # QB Customer ID
 
 	transactions = relationship("Transaction", back_populates="client")
 
@@ -55,6 +57,10 @@ class Transaction(Base):
 	client_po_amount = Column(Numeric, nullable=True)
 	supplier_po_amount = Column(Numeric, nullable=True)
 	client_quote_currency = Column(String, nullable=True)
+	# QuickBooks integration
+	quickbooks_invoice_id = Column(String, nullable=True)  # QB Invoice ID
+	quickbooks_invoice_number = Column(String, nullable=True)  # QB Invoice Number (display)
+	invoiced_at = Column(DateTime, nullable=True)  # When invoice was created
 
 	client = relationship("Client", back_populates="transactions")
 	documents = relationship("Document", back_populates="transaction")
@@ -133,3 +139,20 @@ class AssociatedCost(Base):
 	amount = Column(Numeric, nullable=False)
 	status = Column(String, nullable=False, default="due")  # paid, due, overdue
 	created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class QuickBooksToken(Base):
+	"""
+	Store QuickBooks OAuth tokens for API access.
+	Only one active token set per company (singleton pattern).
+	"""
+	__tablename__ = "quickbooks_tokens"
+
+	id = Column(Integer, primary_key=True)
+	realm_id = Column(String, nullable=False)  # QB Company ID
+	access_token = Column(Text, nullable=False)
+	refresh_token = Column(Text, nullable=False)
+	token_expires_at = Column(DateTime, nullable=False)  # When access token expires
+	refresh_expires_at = Column(DateTime, nullable=False)  # When refresh token expires
+	created_at = Column(DateTime, default=datetime.utcnow)
+	updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

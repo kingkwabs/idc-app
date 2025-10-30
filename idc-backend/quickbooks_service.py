@@ -5,8 +5,8 @@ Handles OAuth, token management, and invoice creation.
 import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-from intuitlib.client import AuthClient
-from intuitlib.enums import Scopes
+from intuitoauth.client import AuthClient
+from intuitoauth.scopes import Scopes
 from quickbooks import QuickBooks
 from quickbooks.objects.customer import Customer
 from quickbooks.objects.invoice import Invoice, InvoiceLine, SalesItemLine, SalesItemLineDetail

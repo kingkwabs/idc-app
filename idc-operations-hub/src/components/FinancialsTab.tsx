@@ -341,11 +341,45 @@ export function FinancialsTab({ onInvoiceCreated, transactionId, clientPoAmount,
               <p className="text-gray-600 mb-6">Create an invoice in QuickBooks with the selected supplier quote and associated costs.</p>
 
               <Button
-                onClick={() => {
-                  toast.success("Invoice created successfully!", {
-                    description: "Progress automatically advanced to 'Paid' status. Invoice #INV-0452 created in QuickBooks.",
-                  });
-                  onInvoiceCreated();
+                onClick={async () => {
+                  try {
+                    const token = localStorage.getItem('access_token');
+                    const response = await fetch(`${import.meta.env.VITE_API_BASE || 'http://localhost:5001'}/quickbooks/transactions/${transactionId}/create-invoice`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                      },
+                      body: JSON.stringify({
+                        selected_quote_id: selectedQuoteId,
+                        include_associated_costs: true,
+                        custom_notes: ''
+                      })
+                    });
+
+                    if (response.ok) {
+                      const data = await response.json();
+                      toast.success("Invoice created successfully!", {
+                        description: `Invoice #${data.invoice_number} created in QuickBooks. Total: ${data.total}`,
+                      });
+                      onInvoiceCreated();
+                    } else {
+                      const error = await response.json();
+                      if (error.error === 'already_invoiced') {
+                        toast.error("Invoice already exists", {
+                          description: `This transaction already has QB Invoice #${error.invoice_number}`,
+                        });
+                      } else {
+                        toast.error("Failed to create invoice", {
+                          description: error.details || error.error,
+                        });
+                      }
+                    }
+                  } catch (error) {
+                    toast.error("Error creating invoice", {
+                      description: "Check QuickBooks connection in settings",
+                    });
+                  }
                 }}
                 className="bg-teal-600 hover:bg-teal-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 px-8 py-3 text-base"
               >

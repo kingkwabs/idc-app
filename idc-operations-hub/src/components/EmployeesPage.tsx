@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, UserCog } from "lucide-react";
+import { Plus, Trash2, UserCog, Edit } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Input } from "./ui/input";
@@ -21,11 +21,19 @@ export function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     role: 'employee'
+  });
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: ''
   });
 
   useEffect(() => {
@@ -110,6 +118,64 @@ export function EmployeesPage() {
     } catch (error) {
       console.error('Error deleting employee:', error);
       toast.error('Error deleting employee');
+    }
+  };
+
+  const handleEditEmployee = (employee: Employee) => {
+    setEditingEmployee(employee);
+    setEditFormData({
+      name: employee.name,
+      email: employee.email,
+      password: '', // Don't pre-fill password
+      role: employee.role
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdateEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!editingEmployee) return;
+
+    // Only send fields that have values
+    const updatePayload: any = {};
+    if (editFormData.name && editFormData.name !== editingEmployee.name) {
+      updatePayload.name = editFormData.name;
+    }
+    if (editFormData.email && editFormData.email !== editingEmployee.email) {
+      updatePayload.email = editFormData.email;
+    }
+    if (editFormData.password) {
+      updatePayload.password = editFormData.password;
+    }
+    if (editFormData.role && editFormData.role !== editingEmployee.role) {
+      updatePayload.role = editFormData.role;
+    }
+
+    if (Object.keys(updatePayload).length === 0) {
+      toast.error('No changes to save');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/auth/employees/${editingEmployee.id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(updatePayload)
+      });
+
+      if (response.ok) {
+        toast.success('Employee updated successfully');
+        setIsEditDialogOpen(false);
+        setEditingEmployee(null);
+        fetchEmployees();
+      } else {
+        const data = await response.json();
+        toast.error(data.error === 'email_exists' ? 'Email already exists' : 'Failed to update employee');
+      }
+    } catch (error) {
+      console.error('Error updating employee:', error);
+      toast.error('Error updating employee');
     }
   };
 
@@ -211,6 +277,71 @@ export function EmployeesPage() {
         </Dialog>
       </div>
 
+      {/* Edit Employee Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Employee</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUpdateEmployee} className="space-y-4">
+            <div>
+              <Label htmlFor="edit-name">Full Name</Label>
+              <Input
+                id="edit-name"
+                value={editFormData.name}
+                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                placeholder="John Doe"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="edit-email">Email</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                value={editFormData.email}
+                onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                placeholder="john@example.com"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="edit-password">New Password (leave blank to keep current)</Label>
+              <Input
+                id="edit-password"
+                type="password"
+                value={editFormData.password}
+                onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                placeholder="••••••••"
+                minLength={6}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="edit-role">Role</Label>
+              <Select value={editFormData.role} onValueChange={(value) => setEditFormData({ ...editFormData, role: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="employee">Employee</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
+                Update Employee
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="w-full">
           <thead className="bg-gray-50 border-b">
@@ -269,14 +400,24 @@ export function EmployeesPage() {
                     {formatDate(employee.created_at)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteEmployee(employee.id, employee.name)}
-                      className="text-red-600 hover:text-red-900 hover:bg-red-50"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditEmployee(employee)}
+                        className="text-blue-600 hover:text-blue-900 hover:bg-blue-50"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteEmployee(employee.id, employee.name)}
+                        className="text-red-600 hover:text-red-900 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))

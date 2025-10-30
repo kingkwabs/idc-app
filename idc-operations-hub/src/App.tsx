@@ -9,6 +9,7 @@ import { CreateTransactionModal } from "./components/CreateTransactionModal";
 import { ClientsPage } from "./components/ClientsPage";
 import { SuppliersPage } from "./components/SuppliersPage";
 import { EmployeesPage } from "./components/EmployeesPage";
+import { ProfilePage } from "./components/ProfilePage";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
@@ -120,6 +121,7 @@ export default function App() {
               <Route path="/clients" element={<div className="p-8"><ClientsPage /></div>} />
               <Route path="/suppliers" element={<div className="p-8"><SuppliersPage /></div>} />
               <Route path="/employees" element={<div className="p-8"><EmployeesPage /></div>} />
+              <Route path="/profile" element={<div className="p-8"><ProfilePage /></div>} />
             </Routes>
           </main>
         </div>

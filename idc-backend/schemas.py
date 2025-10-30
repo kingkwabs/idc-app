@@ -38,6 +38,19 @@ class EmployeeOut(EmployeeBase):
 		from_attributes = True
 
 
+class EmployeeUpdate(BaseModel):
+	"""
+	Schema for updating an employee. All fields are optional.
+	"""
+	name: Optional[str] = None
+	email: Optional[str] = None
+	password: Optional[str] = None
+	role: Optional[str] = None
+	quickbooks_employee_id: Optional[str] = None
+	payroll_info: Optional[str] = None
+	invoice_mapping: Optional[str] = None
+
+
 class EmployeeJWTClaims(BaseModel):
 	"""
 	JWT claims for Employee tokens. Extendable for QuickBooks fields.

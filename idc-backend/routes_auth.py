@@ -2,10 +2,10 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime
 import bcrypt
 
-from auth_util import create_access_token, require_admin
+from auth_util import create_access_token, require_admin, require_auth_or_401
 from database import db_session
 from models import Employee
-from schemas import EmployeeCreate, EmployeeOut
+from schemas import EmployeeCreate, EmployeeOut, EmployeeUpdate
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -140,7 +140,6 @@ def get_current_user():
 	"""
 	Get current user info from JWT token.
 	"""
-	from auth_util import require_auth_or_401
 	auth_result = require_auth_or_401()
 	if isinstance(auth_result, tuple):
 		return auth_result
@@ -153,3 +152,119 @@ def get_current_user():
 			"role": auth_result.get('role')
 		}
 	})
+
+
+@bp.put('/employees/<int:employee_id>')
+@require_admin
+def update_employee(current_user, employee_id):
+	"""
+	Admin-only endpoint to update any employee's details.
+	Can update name, email, password, role.
+	"""
+	data = request.get_json() or {}
+	try:
+		update_data = EmployeeUpdate(**data)
+	except Exception as e:
+		return jsonify({"error": "invalid_input", "details": str(e)}), 400
+
+	with db_session() as session:
+		employee = session.query(Employee).filter(Employee.id == employee_id).first()
+		if not employee:
+			return jsonify({"error": "employee_not_found"}), 404
+
+		# Check for email conflicts if email is being changed
+		if update_data.email and update_data.email != employee.email:
+			existing = session.query(Employee).filter(Employee.email == update_data.email).first()
+			if existing:
+				return jsonify({"error": "email_exists"}), 409
+
+		# Update fields if provided
+		if update_data.name:
+			employee.name = update_data.name
+		if update_data.email:
+			employee.email = update_data.email
+		if update_data.password:
+			employee.password_hash = bcrypt.hashpw(update_data.password.encode(), bcrypt.gensalt()).decode()
+		if update_data.role:
+			employee.role = update_data.role
+		if update_data.quickbooks_employee_id is not None:
+			employee.quickbooks_employee_id = update_data.quickbooks_employee_id
+		if update_data.payroll_info is not None:
+			employee.payroll_info = update_data.payroll_info
+		if update_data.invoice_mapping is not None:
+			employee.invoice_mapping = update_data.invoice_mapping
+
+		session.flush()
+
+		employee_data = {
+			"id": employee.id,
+			"name": employee.name,
+			"email": employee.email,
+			"role": employee.role,
+			"created_at": employee.created_at.isoformat()
+		}
+		return jsonify({"employee": employee_data}), 200
+
+
+@bp.put('/me')
+def update_own_profile():
+	"""
+	Endpoint for any authenticated user to update their own profile.
+	Can update name, email, password (but NOT role).
+	"""
+	auth_result = require_auth_or_401()
+	if isinstance(auth_result, tuple):
+		return auth_result
+
+	user_id = auth_result.get('id')
+	data = request.get_json() or {}
+
+	# Only allow updating certain fields
+	allowed_fields = {'name', 'email', 'password'}
+	if any(key not in allowed_fields for key in data.keys()):
+		return jsonify({"error": "forbidden", "message": "Can only update name, email, or password"}), 403
+
+	try:
+		update_data = EmployeeUpdate(**data)
+	except Exception as e:
+		return jsonify({"error": "invalid_input", "details": str(e)}), 400
+
+	with db_session() as session:
+		employee = session.query(Employee).filter(Employee.id == user_id).first()
+		if not employee:
+			return jsonify({"error": "employee_not_found"}), 404
+
+		# Check for email conflicts if email is being changed
+		if update_data.email and update_data.email != employee.email:
+			existing = session.query(Employee).filter(Employee.email == update_data.email).first()
+			if existing:
+				return jsonify({"error": "email_exists"}), 409
+
+		# Update fields if provided
+		if update_data.name:
+			employee.name = update_data.name
+		if update_data.email:
+			employee.email = update_data.email
+		if update_data.password:
+			employee.password_hash = bcrypt.hashpw(update_data.password.encode(), bcrypt.gensalt()).decode()
+
+		session.flush()
+
+		# Generate new token with updated claims
+		claims = {
+			"id": employee.id,
+			"name": employee.name,
+			"email": employee.email,
+			"role": employee.role,
+		}
+		token = create_access_token(sub=str(employee.id), extra_claims=claims)
+
+		return jsonify({
+			"user": {
+				"id": employee.id,
+				"name": employee.name,
+				"email": employee.email,
+				"role": employee.role
+			},
+			"access_token": token  # Return new token with updated info
+		}), 200

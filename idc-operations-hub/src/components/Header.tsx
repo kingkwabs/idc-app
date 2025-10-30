@@ -1,4 +1,5 @@
-import { Search, User, LogOut, ChevronDown } from "lucide-react";
+import { Search, User, LogOut, ChevronDown, UserCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { useState, useEffect } from "react";
 import {
@@ -21,6 +22,7 @@ interface UserInfo {
 
 export function Header() {
   const [user, setUser] = useState<UserInfo | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchUserInfo();
@@ -100,6 +102,10 @@ export function Header() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate('/profile')} className="cursor-pointer">
+              <UserCircle className="mr-2 h-4 w-4" />
+              <span>My Profile</span>
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={handleLogout} className="text-red-600 cursor-pointer">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>

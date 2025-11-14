@@ -49,10 +49,28 @@ def quickbooks_callback():
 		qb_service = QuickBooksService(session)
 		try:
 			result = qb_service.exchange_code_for_tokens(code, realm_id)
-			# Redirect to frontend success page
-			return redirect(f"https://your-frontend-url.vercel.app/settings?qb=connected")
+			# Show success page
+			return """
+			<html>
+				<head><title>QuickBooks Connected</title></head>
+				<body style="font-family: sans-serif; text-align: center; padding: 50px;">
+					<h1 style="color: #2ca01c;">✓ QuickBooks Connected Successfully!</h1>
+					<p>Your QuickBooks account has been linked to IDC Energy Database.</p>
+					<p>You can close this window and return to your application.</p>
+				</body>
+			</html>
+			"""
 		except Exception as e:
-			return jsonify({"error": "token_exchange_failed", "details": str(e)}), 500
+			return f"""
+			<html>
+				<head><title>QuickBooks Connection Failed</title></head>
+				<body style="font-family: sans-serif; text-align: center; padding: 50px;">
+					<h1 style="color: #c01c1c;">✗ Connection Failed</h1>
+					<p>Error: {str(e)}</p>
+					<p>Please try again or contact support.</p>
+				</body>
+			</html>
+			""", 500
 
 
 @bp.get('/status')

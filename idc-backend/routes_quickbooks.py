@@ -202,7 +202,6 @@ def create_invoice(current_user, transaction_id):
 			)
 
 			# Log activity
-			from routes_transaction_extras import addActivity
 			session.add(ActivityLog(
 				transaction_id=transaction_id,
 				action="invoice-created",

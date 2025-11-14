@@ -5,11 +5,12 @@ Handles OAuth, token management, and invoice creation.
 import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-from intuitoauth.client import AuthClient
-from intuitoauth.scopes import Scopes
+from intuitlib.client import AuthClient
+from intuitlib.enums import Scopes
 from quickbooks import QuickBooks
 from quickbooks.objects.customer import Customer
-from quickbooks.objects.invoice import Invoice, InvoiceLine, SalesItemLine, SalesItemLineDetail
+from quickbooks.objects.invoice import Invoice
+from quickbooks.objects.detailline import SalesItemLine, SalesItemLineDetail
 from quickbooks.objects.item import Item
 from quickbooks.objects.attachable import Attachable, AttachableRef
 from sqlalchemy.orm import Session

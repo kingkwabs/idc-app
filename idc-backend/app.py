@@ -40,9 +40,10 @@ def health_check():
 	"""Health check endpoint that also pings the database to keep it warm."""
 	try:
 		from database import db_session
+		from sqlalchemy import text
 		with db_session() as session:
 			# Simple query to keep database connection alive
-			session.execute("SELECT 1")
+			session.execute(text("SELECT 1"))
 		return jsonify({"status": "ok", "database": "connected"}), 200
 	except Exception as e:
 		return jsonify({"status": "degraded", "database": "error", "message": str(e)}), 503

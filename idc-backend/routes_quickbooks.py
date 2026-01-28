@@ -4,6 +4,7 @@ QuickBooks OAuth and Invoice Management Routes
 from flask import Blueprint, request, jsonify, redirect
 from datetime import datetime
 from decimal import Decimal
+from sqlalchemy import select
 
 from auth_util import require_admin
 from database import db_session
@@ -15,12 +16,12 @@ bp = Blueprint('quickbooks', __name__, url_prefix='/quickbooks')
 
 @bp.get('/auth/connect')
 @require_admin
-def connect_quickbooks(current_user):
+async def connect_quickbooks(current_user):
 	"""
 	Initiate QuickBooks OAuth flow.
 	Redirects admin to QuickBooks authorization page.
 	"""
-	with db_session() as session:
+	async with db_session() as session:
 		qb_service = QuickBooksService(session)
 		# Generate a state token for CSRF protection
 		state = f"user_{current_user['id']}"
@@ -29,7 +30,7 @@ def connect_quickbooks(current_user):
 
 
 @bp.get('/callback')
-def quickbooks_callback():
+async def quickbooks_callback():
 	"""
 	OAuth callback endpoint.
 	QuickBooks redirects here after user authorizes the app.
@@ -45,7 +46,7 @@ def quickbooks_callback():
 	if not code or not realm_id:
 		return jsonify({"error": "missing_parameters"}), 400
 
-	with db_session() as session:
+	async with db_session() as session:
 		qb_service = QuickBooksService(session)
 		try:
 			result = qb_service.exchange_code_for_tokens(code, realm_id)
@@ -75,12 +76,12 @@ def quickbooks_callback():
 
 @bp.get('/status')
 @require_admin
-def quickbooks_status(current_user):
+async def quickbooks_status(current_user):
 	"""
 	Check QuickBooks connection status.
 	Returns whether QB is connected and token expiration info.
 	"""
-	with db_session() as session:
+	async with db_session() as session:
 		qb_service = QuickBooksService(session)
 		is_connected = qb_service.is_connected()
 
@@ -89,7 +90,8 @@ def quickbooks_status(current_user):
 
 		# Get token info
 		from models import QuickBooksToken
-		token = session.query(QuickBooksToken).first()
+		result = await session.execute(select(QuickBooksToken))
+		token = result.scalars().first()
 
 		return jsonify({
 			"connected": True,
@@ -101,11 +103,11 @@ def quickbooks_status(current_user):
 
 @bp.post('/disconnect')
 @require_admin
-def disconnect_quickbooks(current_user):
+async def disconnect_quickbooks(current_user):
 	"""
 	Disconnect QuickBooks by removing stored tokens.
 	"""
-	with db_session() as session:
+	async with db_session() as session:
 		qb_service = QuickBooksService(session)
 		qb_service.disconnect()
 		return jsonify({"message": "QuickBooks disconnected successfully"})
@@ -113,7 +115,7 @@ def disconnect_quickbooks(current_user):
 
 @bp.post('/transactions/<int:transaction_id>/create-invoice')
 @require_admin
-def create_invoice(current_user, transaction_id):
+async def create_invoice(current_user, transaction_id):
 	"""
 	Create an invoice in QuickBooks for a transaction.
 
@@ -129,9 +131,10 @@ def create_invoice(current_user, transaction_id):
 	include_costs = data.get('include_associated_costs', True)
 	custom_notes = data.get('custom_notes', '')
 
-	with db_session() as session:
+	async with db_session() as session:
 		# Get transaction with all relationships
-		transaction = session.query(Transaction).filter(Transaction.id == transaction_id).first()
+		result = await session.execute(select(Transaction).filter(Transaction.id == transaction_id))
+		transaction = result.scalars().first()
 		if not transaction:
 			return jsonify({"error": "transaction_not_found"}), 404
 
@@ -148,9 +151,11 @@ def create_invoice(current_user, transaction_id):
 
 		# Add selected supplier quote or use supplier PO amount
 		if selected_quote_id:
-			quote = session.query(SupplierQuote).filter(SupplierQuote.id == selected_quote_id).first()
+			result = await session.execute(select(SupplierQuote).filter(SupplierQuote.id == selected_quote_id))
+			quote = result.scalars().first()
 			if quote:
-				supplier = session.query(Supplier).filter(Supplier.id == quote.supplier_id).first()
+				result = await session.execute(select(Supplier).filter(Supplier.id == quote.supplier_id))
+				supplier = result.scalars().first()
 				line_items.append({
 					"description": f"Supplier: {supplier.name if supplier else 'Unknown'} - {transaction.item_description or 'Services'}",
 					"amount": float(quote.amount),
@@ -167,9 +172,10 @@ def create_invoice(current_user, transaction_id):
 
 		# Add associated costs as separate line items
 		if include_costs:
-			costs = session.query(AssociatedCost).filter(
+			result = await session.execute(select(AssociatedCost).filter(
 				AssociatedCost.transaction_id == transaction_id
-			).all()
+			))
+			costs = result.scalars().all()
 
 			for cost in costs:
 				line_items.append({
@@ -207,7 +213,7 @@ def create_invoice(current_user, transaction_id):
 				action="invoice-created",
 				details=f"QB Invoice #{result['invoice_number']} created"
 			))
-			session.commit()
+			await session.commit()
 
 			return jsonify({
 				"message": "Invoice created successfully",

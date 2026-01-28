@@ -7,8 +7,9 @@ from schemas import ClientOut
 bp = Blueprint('clients', __name__, url_prefix='/api/clients')
 
 @bp.get('')
-def list_clients():
-	with db_session() as session:
-		items = session.execute(select(Client)).scalars().all()
+async def list_clients():
+	async with db_session() as session:
+		result = await session.execute(select(Client))
+		items = result.scalars().all()
 		data = [ClientOut.model_validate(i).model_dump() for i in items]
-		return jsonify({"items": data}) 
+		return jsonify({"items": data})

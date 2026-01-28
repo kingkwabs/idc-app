@@ -1,12 +1,13 @@
 # app.py
 from flask import Flask, request, jsonify
 import os
+import asyncio
 try:
-    from dotenv import load_dotenv
-    load_dotenv()
+	from dotenv import load_dotenv
+	load_dotenv()
 except Exception:
-    pass
-from flask_cors import CORS # Import CORS
+	pass
+from flask_cors import CORS
 from database import get_engine
 from routes_transactions import bp as transactions_bp
 from routes_clients import bp as clients_bp
@@ -17,15 +18,20 @@ from routes_quickbooks import bp as quickbooks_bp
 from models import Base
 
 app = Flask(__name__)
-CORS(app) # Enable CORS for all routes
+CORS(app)
 
-# Initialize DB engine on startup
-try:
-	engine = get_engine()
-	Base.metadata.create_all(bind=engine)
-	print("Database engine initialized and tables ensured.")
-except Exception as e:
-	print(f"Database engine initialization failed: {e}")
+# Initialize DB engine on startup (async)
+@app.before_serving
+async def startup():
+	"""Initialize async database engine before serving requests."""
+	try:
+		engine = await get_engine()
+		# Create tables using run_sync for metadata operations
+		async with engine.begin() as conn:
+			await conn.run_sync(Base.metadata.create_all)
+		print("Database engine initialized and tables ensured.")
+	except Exception as e:
+		print(f"Database engine initialization failed: {e}")
 
 # Register blueprints
 app.register_blueprint(transactions_bp)
@@ -36,21 +42,21 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(quickbooks_bp)
 
 @app.route('/health', methods=['GET'])
-def health_check():
+async def health_check():
 	"""Health check endpoint that also pings the database to keep it warm."""
 	try:
 		from database import db_session
 		from sqlalchemy import text
-		with db_session() as session:
+		async with db_session() as session:
 			# Simple query to keep database connection alive
-			session.execute(text("SELECT 1"))
+			await session.execute(text("SELECT 1"))
 		return jsonify({"status": "ok", "database": "connected"}), 200
 	except Exception as e:
 		return jsonify({"status": "degraded", "database": "error", "message": str(e)}), 503
 
 # Legacy demo endpoint kept for compatibility (prefer blueprint)
 @app.route('/api/transactions', methods=['POST'])
-def create_transaction_legacy():
+async def create_transaction_legacy():
 	data = request.get_json()
 	client = data.get('client')
 	transaction_name = data.get('transactionName')
@@ -66,4 +72,9 @@ def create_transaction_legacy():
 	return jsonify(response), 201
 
 if __name__ == '__main__':
-	app.run(debug=True, port=5001) # Run on a different port than your frontend
+	# For development with async support, use hypercorn or uvicorn
+	# uvicorn app:app --reload --port 5001
+	# or: hypercorn app:app --bind 0.0.0.0:5001 --reload
+	print("For async support, run with: uvicorn app:app --reload --port 5001")
+	print("Or: hypercorn app:app --bind 0.0.0.0:5001 --reload")
+	app.run(debug=True, port=5001)

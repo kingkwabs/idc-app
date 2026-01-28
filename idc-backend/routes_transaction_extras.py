@@ -10,28 +10,26 @@ bp = Blueprint('transaction_extras', __name__, url_prefix='/api/transactions')
 
 
 @bp.get('/<int:trx_id>/suppliers')
-async def get_transaction_suppliers(trx_id: int):
-	async with db_session() as session:
-		result = await session.execute(select(TransactionSupplierLink).where(TransactionSupplierLink.transaction_id == trx_id))
-		links = result.scalars().all()
+def get_transaction_suppliers(trx_id: int):
+	with db_session() as session:
+		links = session.execute(select(TransactionSupplierLink).where(TransactionSupplierLink.transaction_id == trx_id)).scalars().all()
 		supplier_ids = [l.supplier_id for l in links]
 		suppliers = []
 		if supplier_ids:
-			result = await session.execute(select(Supplier).where(Supplier.id.in_(supplier_ids)))
-			suppliers = result.scalars().all()
+			suppliers = session.execute(select(Supplier).where(Supplier.id.in_(supplier_ids))).scalars().all()
 		return jsonify({"items": [{"id": s.id, "name": s.name} for s in suppliers]})
 
 
 @bp.post('/<int:trx_id>/suppliers')
-async def add_transaction_supplier(trx_id: int):
+def add_transaction_supplier(trx_id: int):
 	payload = request.get_json() or {}
 	supplier_id = payload.get('supplier_id')
 	if not supplier_id:
 		return jsonify({"error": "supplier_id required"}), 400
-	async with db_session() as session:
+	with db_session() as session:
 		# ensure transaction and supplier exist
-		trx = await session.get(Transaction, trx_id)
-		sup = await session.get(Supplier, supplier_id)
+		trx = session.get(Transaction, trx_id)
+		sup = session.get(Supplier, supplier_id)
 		if trx is None or sup is None:
 			return jsonify({"error": "Not found"}), 404
 		link = TransactionSupplierLink(transaction_id=trx_id, supplier_id=supplier_id)
@@ -41,10 +39,9 @@ async def add_transaction_supplier(trx_id: int):
 
 
 @bp.get('/<int:trx_id>/documents')
-async def list_documents(trx_id: int):
-	async with db_session() as session:
-		result = await session.execute(select(Document).where(Document.transaction_id == trx_id).order_by(Document.uploaded_at.desc()))
-		docs = result.scalars().all()
+def list_documents(trx_id: int):
+	with db_session() as session:
+		docs = session.execute(select(Document).where(Document.transaction_id == trx_id).order_by(Document.uploaded_at.desc())).scalars().all()
 		return jsonify({
 			"items": [{
 				"id": d.id,
@@ -59,7 +56,7 @@ async def list_documents(trx_id: int):
 
 
 @bp.post('/<int:trx_id>/documents')
-async def create_document(trx_id: int):
+def create_document(trx_id: int):
 	payload = request.get_json() or {}
 	category = payload.get('category')
 	name = payload.get('name')
@@ -69,49 +66,47 @@ async def create_document(trx_id: int):
 	content_b64 = payload.get('content_base64')
 	if not category or not name:
 		return jsonify({"error": "category and name required"}), 400
-	async with db_session() as session:
-		trx = await session.get(Transaction, trx_id)
+	with db_session() as session:
+		trx = session.get(Transaction, trx_id)
 		if trx is None:
 			return jsonify({"error": "Not found"}), 404
 		binary = base64.b64decode(content_b64) if content_b64 else None
 		doc = Document(transaction_id=trx_id, category=category, name=name, uploaded_by=uploaded_by, mime_type=mime_type, size_bytes=size_bytes, content=binary)
 		session.add(doc)
-		await session.flush()
+		session.flush()
 		session.add(ActivityLog(transaction_id=trx_id, action="document-uploaded", details=f"{category}: {name}"))
 		return jsonify({"id": doc.id}), 201
 
 @bp.get('/<int:trx_id>/documents/<int:doc_id>/download')
-async def download_document(trx_id: int, doc_id: int):
-	async with db_session() as session:
-		doc = await session.get(Document, doc_id)
+def download_document(trx_id: int, doc_id: int):
+	with db_session() as session:
+		doc = session.get(Document, doc_id)
 		if doc is None or doc.transaction_id != trx_id or not doc.content:
 			return jsonify({"error": "Not found"}), 404
 		return send_file(BytesIO(doc.content), mimetype=doc.mime_type or 'application/octet-stream', as_attachment=True, download_name=doc.name)
 
 @bp.delete('/<int:trx_id>/documents/<int:doc_id>')
-async def delete_document(trx_id: int, doc_id: int):
-	async with db_session() as session:
-		doc = await session.get(Document, doc_id)
+def delete_document(trx_id: int, doc_id: int):
+	with db_session() as session:
+		doc = session.get(Document, doc_id)
 		if doc is None or doc.transaction_id != trx_id:
 			return jsonify({"error": "Not found"}), 404
 		name = doc.name
 		category = doc.category
-		await session.delete(doc)
+		session.delete(doc)
 		session.add(ActivityLog(transaction_id=trx_id, action="document-deleted", details=f"{category}: {name}"))
 		return ('', 204)
 
 
 @bp.get('/<int:trx_id>/quotes')
-async def list_supplier_quotes(trx_id: int):
-	async with db_session() as session:
-		result = await session.execute(select(SupplierQuote).where(SupplierQuote.transaction_id == trx_id).order_by(SupplierQuote.created_at.desc()))
-		items = result.scalars().all()
+def list_supplier_quotes(trx_id: int):
+	with db_session() as session:
+		items = session.execute(select(SupplierQuote).where(SupplierQuote.transaction_id == trx_id).order_by(SupplierQuote.created_at.desc())).scalars().all()
 		# map supplier names
 		supplier_ids = list({q.supplier_id for q in items})
 		suppliers = {}
 		if supplier_ids:
-			result = await session.execute(select(Supplier).where(Supplier.id.in_(supplier_ids)))
-			for s in result.scalars().all():
+			for s in session.execute(select(Supplier).where(Supplier.id.in_(supplier_ids))).scalars().all():
 				suppliers[s.id] = s.name
 		return jsonify({
 			"items": [{
@@ -128,7 +123,7 @@ async def list_supplier_quotes(trx_id: int):
 
 
 @bp.post('/<int:trx_id>/quotes')
-async def create_supplier_quote(trx_id: int):
+def create_supplier_quote(trx_id: int):
 	payload = request.get_json() or {}
 	supplier_id = payload.get('supplier_id')
 	amount = payload.get('amount')
@@ -137,23 +132,22 @@ async def create_supplier_quote(trx_id: int):
 	notes = payload.get('notes')
 	if not supplier_id or amount is None:
 		return jsonify({"error": "supplier_id and amount required"}), 400
-	async with db_session() as session:
-		trx = await session.get(Transaction, trx_id)
-		sup = await session.get(Supplier, supplier_id)
+	with db_session() as session:
+		trx = session.get(Transaction, trx_id)
+		sup = session.get(Supplier, supplier_id)
 		if trx is None or sup is None:
 			return jsonify({"error": "Not found"}), 404
 		quote = SupplierQuote(transaction_id=trx_id, supplier_id=supplier_id, amount=amount, currency=currency, lead_time_days=lead_time_days, notes=notes)
 		session.add(quote)
-		await session.flush()
+		session.flush()
 		session.add(ActivityLog(transaction_id=trx_id, action="supplier-quote-added", details=f"{sup.name}: {amount} {currency or ''}"))
 		return jsonify({"id": quote.id}), 201
 
 
 @bp.get('/<int:trx_id>/costs')
-async def list_costs(trx_id: int):
-	async with db_session() as session:
-		result = await session.execute(select(AssociatedCost).where(AssociatedCost.transaction_id == trx_id).order_by(AssociatedCost.created_at.desc()))
-		items = result.scalars().all()
+def list_costs(trx_id: int):
+	with db_session() as session:
+		items = session.execute(select(AssociatedCost).where(AssociatedCost.transaction_id == trx_id).order_by(AssociatedCost.created_at.desc())).scalars().all()
 		return jsonify({
 			"items": [{
 				"id": c.id,
@@ -166,29 +160,29 @@ async def list_costs(trx_id: int):
 
 
 @bp.post('/<int:trx_id>/costs')
-async def create_cost(trx_id: int):
+def create_cost(trx_id: int):
 	payload = request.get_json() or {}
 	description = payload.get('description')
 	amount = payload.get('amount')
 	status = payload.get('status') or 'due'
 	if not description or amount is None:
 		return jsonify({"error": "description and amount required"}), 400
-	async with db_session() as session:
-		trx = await session.get(Transaction, trx_id)
+	with db_session() as session:
+		trx = session.get(Transaction, trx_id)
 		if trx is None:
 			return jsonify({"error": "Not found"}), 404
 		cost = AssociatedCost(transaction_id=trx_id, description=description, amount=amount, status=status)
 		session.add(cost)
-		await session.flush()
+		session.flush()
 		session.add(ActivityLog(transaction_id=trx_id, action="cost-added", details=f"{description}: {amount}"))
 		return jsonify({"id": cost.id}), 201
 
 
 @bp.patch('/<int:trx_id>/costs/<int:cost_id>')
-async def update_cost(trx_id: int, cost_id: int):
+def update_cost(trx_id: int, cost_id: int):
 	payload = request.get_json() or {}
-	async with db_session() as session:
-		c = await session.get(AssociatedCost, cost_id)
+	with db_session() as session:
+		c = session.get(AssociatedCost, cost_id)
 		if c is None or c.transaction_id != trx_id:
 			return jsonify({"error": "Not found"}), 404
 		desc = payload.get('description')
@@ -206,21 +200,21 @@ async def update_cost(trx_id: int, cost_id: int):
 
 
 @bp.delete('/<int:trx_id>/costs/<int:cost_id>')
-async def delete_cost(trx_id: int, cost_id: int):
-	async with db_session() as session:
-		c = await session.get(AssociatedCost, cost_id)
+def delete_cost(trx_id: int, cost_id: int):
+	with db_session() as session:
+		c = session.get(AssociatedCost, cost_id)
 		if c is None or c.transaction_id != trx_id:
 			return jsonify({"error": "Not found"}), 404
 		desc = c.description
-		await session.delete(c)
+		session.delete(c)
 		session.add(ActivityLog(transaction_id=trx_id, action="cost-deleted", details=desc))
 		return ('', 204)
 
 @bp.patch('/<int:trx_id>/refs')
-async def update_refs(trx_id: int):
+def update_refs(trx_id: int):
 	payload = request.get_json() or {}
-	async with db_session() as session:
-		trx = await session.get(Transaction, trx_id)
+	with db_session() as session:
+		trx = session.get(Transaction, trx_id)
 		if trx is None:
 			return jsonify({"error": "Not found"}), 404
 		rfq = payload.get('rfq_number')
@@ -238,10 +232,9 @@ async def update_refs(trx_id: int):
 
 
 @bp.get('/<int:trx_id>/shipment')
-async def get_shipment(trx_id: int):
-	async with db_session() as session:
-		result = await session.execute(select(ShipmentInfo).where(ShipmentInfo.transaction_id == trx_id))
-		info = result.scalars().first()
+def get_shipment(trx_id: int):
+	with db_session() as session:
+		info = session.execute(select(ShipmentInfo).where(ShipmentInfo.transaction_id == trx_id)).scalars().first()
 		if not info:
 			return jsonify({}), 200
 		return jsonify({
@@ -253,11 +246,10 @@ async def get_shipment(trx_id: int):
 
 
 @bp.put('/<int:trx_id>/shipment')
-async def upsert_shipment(trx_id: int):
+def upsert_shipment(trx_id: int):
 	payload = request.get_json() or {}
-	async with db_session() as session:
-		result = await session.execute(select(ShipmentInfo).where(ShipmentInfo.transaction_id == trx_id))
-		info = result.scalars().first()
+	with db_session() as session:
+		info = session.execute(select(ShipmentInfo).where(ShipmentInfo.transaction_id == trx_id)).scalars().first()
 		if not info:
 			info = ShipmentInfo(transaction_id=trx_id)
 			session.add(info)
@@ -276,10 +268,9 @@ async def upsert_shipment(trx_id: int):
 
 
 @bp.get('/<int:trx_id>/activity')
-async def list_activity(trx_id: int):
-	async with db_session() as session:
-		result = await session.execute(select(ActivityLog).where(ActivityLog.transaction_id == trx_id).order_by(ActivityLog.created_at.desc()))
-		items = result.scalars().all()
+def list_activity(trx_id: int):
+	with db_session() as session:
+		items = session.execute(select(ActivityLog).where(ActivityLog.transaction_id == trx_id).order_by(ActivityLog.created_at.desc())).scalars().all()
 		return jsonify({
 			"items": [{
 				"id": a.id,
@@ -291,12 +282,12 @@ async def list_activity(trx_id: int):
 
 
 @bp.post('/<int:trx_id>/activity')
-async def add_activity(trx_id: int):
+def add_activity(trx_id: int):
 	payload = request.get_json() or {}
 	action = payload.get('action')
 	details = payload.get('details')
 	if not action:
 		return jsonify({"error": "action required"}), 400
-	async with db_session() as session:
+	with db_session() as session:
 		session.add(ActivityLog(transaction_id=trx_id, action=action, details=details))
-		return jsonify({"ok": True}), 201
+		return jsonify({"ok": True}), 201 

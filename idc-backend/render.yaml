@@ -4,7 +4,7 @@ services:
     env: python
     rootDir: ./
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --worker-class uvicorn.workers.UvicornWorker --workers 4 --timeout 120
+    startCommand: gunicorn app:app -b 0.0.0.0:$PORT
     envVars:
       - key: DB_SECRET_NAME
         sync: false

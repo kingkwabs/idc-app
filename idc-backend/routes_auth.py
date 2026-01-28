@@ -1,7 +1,6 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 import bcrypt
-from sqlalchemy import select
 
 from auth_util import create_access_token, require_admin, require_auth_or_401
 from database import db_session
@@ -12,7 +11,7 @@ bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 
 @bp.post('/signup')
-async def signup():
+def signup():
 	"""
 	DEPRECATED: Public signup disabled for security.
 	Use /auth/employees (admin-only) to create new employees.
@@ -25,7 +24,7 @@ async def signup():
 
 
 @bp.post('/login')
-async def login():
+def login():
 	"""
 	Authenticate an employee using email and password.
 	Only users in the employees table can log in.
@@ -39,9 +38,8 @@ async def login():
 	if not email or not password:
 		return jsonify({"error": "invalid_credentials"}), 401
 
-	async with db_session() as session:
-		result = await session.execute(select(Employee).filter(Employee.email == email))
-		user = result.scalars().first()
+	with db_session() as session:
+		user = session.query(Employee).filter(Employee.email == email).first()
 		if not user or not bcrypt.checkpw(password.encode(), user.password_hash.encode()):
 			# Generic error message for security
 			return jsonify({"error": "invalid_credentials"}), 401
@@ -60,7 +58,7 @@ async def login():
 
 @bp.post('/employees')
 @require_admin
-async def create_employee(current_user):
+def create_employee(current_user):
 	"""
 	Admin-only endpoint to create new employees.
 	Accepts name, email, password, and role.
@@ -71,10 +69,9 @@ async def create_employee(current_user):
 	except Exception as e:
 		return jsonify({"error": "invalid_input", "details": str(e)}), 400
 
-	async with db_session() as session:
+	with db_session() as session:
 		# Check for duplicate email
-		result = await session.execute(select(Employee).filter(Employee.email == emp_in.email))
-		if result.scalars().first():
+		if session.query(Employee).filter(Employee.email == emp_in.email).first():
 			return jsonify({"error": "email_exists"}), 409
 
 		pw_hash = bcrypt.hashpw(emp_in.password.encode(), bcrypt.gensalt()).decode()
@@ -86,7 +83,7 @@ async def create_employee(current_user):
 			created_at=datetime.utcnow(),
 		)
 		session.add(new_emp)
-		await session.flush()  # get new_emp.id
+		session.flush()  # get new_emp.id
 
 		employee_data = {
 			"id": new_emp.id,
@@ -100,13 +97,12 @@ async def create_employee(current_user):
 
 @bp.get('/employees')
 @require_admin
-async def list_employees(current_user):
+def list_employees(current_user):
 	"""
 	Admin-only endpoint to list all employees.
 	"""
-	async with db_session() as session:
-		result = await session.execute(select(Employee).order_by(Employee.created_at.desc()))
-		employees = result.scalars().all()
+	with db_session() as session:
+		employees = session.query(Employee).order_by(Employee.created_at.desc()).all()
 		employee_list = [
 			{
 				"id": emp.id,
@@ -122,7 +118,7 @@ async def list_employees(current_user):
 
 @bp.delete('/employees/<int:employee_id>')
 @require_admin
-async def delete_employee(current_user, employee_id):
+def delete_employee(current_user, employee_id):
 	"""
 	Admin-only endpoint to delete an employee.
 	Prevents deleting yourself.
@@ -130,18 +126,17 @@ async def delete_employee(current_user, employee_id):
 	if current_user.get('id') == employee_id:
 		return jsonify({"error": "cannot_delete_self"}), 400
 
-	async with db_session() as session:
-		result = await session.execute(select(Employee).filter(Employee.id == employee_id))
-		employee = result.scalars().first()
+	with db_session() as session:
+		employee = session.query(Employee).filter(Employee.id == employee_id).first()
 		if not employee:
 			return jsonify({"error": "employee_not_found"}), 404
 
-		await session.delete(employee)
+		session.delete(employee)
 		return jsonify({"message": "Employee deleted successfully"}), 200
 
 
 @bp.get('/me')
-async def get_current_user():
+def get_current_user():
 	"""
 	Get current user info from JWT token.
 	"""
@@ -161,7 +156,7 @@ async def get_current_user():
 
 @bp.put('/employees/<int:employee_id>')
 @require_admin
-async def update_employee(current_user, employee_id):
+def update_employee(current_user, employee_id):
 	"""
 	Admin-only endpoint to update any employee's details.
 	Can update name, email, password, role.
@@ -172,16 +167,14 @@ async def update_employee(current_user, employee_id):
 	except Exception as e:
 		return jsonify({"error": "invalid_input", "details": str(e)}), 400
 
-	async with db_session() as session:
-		result = await session.execute(select(Employee).filter(Employee.id == employee_id))
-		employee = result.scalars().first()
+	with db_session() as session:
+		employee = session.query(Employee).filter(Employee.id == employee_id).first()
 		if not employee:
 			return jsonify({"error": "employee_not_found"}), 404
 
 		# Check for email conflicts if email is being changed
 		if update_data.email and update_data.email != employee.email:
-			existing_result = await session.execute(select(Employee).filter(Employee.email == update_data.email))
-			existing = existing_result.scalars().first()
+			existing = session.query(Employee).filter(Employee.email == update_data.email).first()
 			if existing:
 				return jsonify({"error": "email_exists"}), 409
 
@@ -201,7 +194,7 @@ async def update_employee(current_user, employee_id):
 		if update_data.invoice_mapping is not None:
 			employee.invoice_mapping = update_data.invoice_mapping
 
-		await session.flush()
+		session.flush()
 
 		employee_data = {
 			"id": employee.id,
@@ -214,7 +207,7 @@ async def update_employee(current_user, employee_id):
 
 
 @bp.put('/me')
-async def update_own_profile():
+def update_own_profile():
 	"""
 	Endpoint for any authenticated user to update their own profile.
 	Can update name, email, password (but NOT role).
@@ -236,16 +229,14 @@ async def update_own_profile():
 	except Exception as e:
 		return jsonify({"error": "invalid_input", "details": str(e)}), 400
 
-	async with db_session() as session:
-		result = await session.execute(select(Employee).filter(Employee.id == user_id))
-		employee = result.scalars().first()
+	with db_session() as session:
+		employee = session.query(Employee).filter(Employee.id == user_id).first()
 		if not employee:
 			return jsonify({"error": "employee_not_found"}), 404
 
 		# Check for email conflicts if email is being changed
 		if update_data.email and update_data.email != employee.email:
-			existing_result = await session.execute(select(Employee).filter(Employee.email == update_data.email))
-			existing = existing_result.scalars().first()
+			existing = session.query(Employee).filter(Employee.email == update_data.email).first()
 			if existing:
 				return jsonify({"error": "email_exists"}), 409
 
@@ -257,7 +248,7 @@ async def update_own_profile():
 		if update_data.password:
 			employee.password_hash = bcrypt.hashpw(update_data.password.encode(), bcrypt.gensalt()).decode()
 
-		await session.flush()
+		session.flush()
 
 		# Generate new token with updated claims
 		claims = {

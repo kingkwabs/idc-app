@@ -4,7 +4,7 @@ services:
     env: python
     rootDir: idc-backend
     buildCommand: pip install -r requirements-runtime.txt
-    startCommand: gunicorn app:app -b 0.0.0.0:$PORT
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --worker-class uvicorn.workers.UvicornWorker --workers 4 --timeout 120
     healthCheckPath: /health
     envVars:
       - key: DB_SECRET_NAME

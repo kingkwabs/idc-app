@@ -1,16 +1,35 @@
 """
 QuickBooks OAuth and Invoice Management Routes
 """
+import logging
 from flask import Blueprint, request, jsonify, redirect
 from datetime import datetime
 from decimal import Decimal
 
-from auth_util import require_admin
+from auth_util import create_access_token, require_admin, verify_token
 from database import db_session
 from models import Transaction, SupplierQuote, AssociatedCost, Supplier, ActivityLog
 from quickbooks_service import QuickBooksService
 
 bp = Blueprint('quickbooks', __name__, url_prefix='/quickbooks')
+logger = logging.getLogger(__name__)
+QB_OAUTH_STATE_PURPOSE = "quickbooks_oauth"
+QB_OAUTH_STATE_TTL_SECONDS = 10 * 60
+
+
+def _create_oauth_state(user_id: str) -> str:
+	return create_access_token(
+		sub=str(user_id),
+		ttl_seconds=QB_OAUTH_STATE_TTL_SECONDS,
+		extra_claims={"purpose": QB_OAUTH_STATE_PURPOSE},
+	)
+
+
+def _verify_oauth_state(state: str) -> dict:
+	payload = verify_token(state)
+	if payload.get("purpose") != QB_OAUTH_STATE_PURPOSE:
+		raise ValueError("invalid_state_purpose")
+	return payload
 
 
 @bp.get('/auth/connect')
@@ -22,8 +41,7 @@ def connect_quickbooks(current_user):
 	"""
 	with db_session() as session:
 		qb_service = QuickBooksService(session)
-		# Generate a state token for CSRF protection
-		state = f"user_{current_user['id']}"
+		state = _create_oauth_state(current_user['id'])
 		auth_url = qb_service.get_authorization_url(state)
 		return jsonify({"authorization_url": auth_url})
 
@@ -38,6 +56,14 @@ def quickbooks_callback():
 	realm_id = request.args.get('realmId')
 	state = request.args.get('state')
 	error = request.args.get('error')
+
+	if not state:
+		return jsonify({"error": "missing_state"}), 400
+
+	try:
+		_verify_oauth_state(state)
+	except Exception:
+		return jsonify({"error": "invalid_state"}), 400
 
 	if error:
 		return jsonify({"error": error, "description": request.args.get('error_description')}), 400
@@ -61,6 +87,7 @@ def quickbooks_callback():
 			</html>
 			"""
 		except Exception as e:
+			logger.exception("QuickBooks OAuth token exchange failed", extra={"realm_id": realm_id})
 			return f"""
 			<html>
 				<head><title>QuickBooks Connection Failed</title></head>
@@ -217,4 +244,5 @@ def create_invoice(current_user, transaction_id):
 			}), 201
 
 		except Exception as e:
+			logger.exception("QuickBooks invoice creation failed", extra={"transaction_id": transaction_id})
 			return jsonify({"error": "invoice_creation_failed", "details": str(e)}), 500

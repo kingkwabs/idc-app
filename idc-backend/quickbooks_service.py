@@ -3,6 +3,7 @@ QuickBooks Online API Service Layer
 Handles OAuth, token management, and invoice creation.
 """
 import os
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from intuitlib.client import AuthClient
@@ -16,6 +17,8 @@ from quickbooks.objects.attachable import Attachable, AttachableRef
 from sqlalchemy.orm import Session
 from models import QuickBooksToken, Client, Transaction
 import base64
+
+logger = logging.getLogger(__name__)
 
 # QuickBooks OAuth Configuration
 QB_CLIENT_ID = os.getenv("QB_CLIENT_ID")
@@ -273,7 +276,10 @@ class QuickBooksService:
 					attachable.save(qb=qb_client)
 				except Exception as e:
 					# Log error but don't fail invoice creation
-					print(f"Failed to attach document {doc.name}: {e}")
+					logger.exception(
+						"Failed to attach document to QuickBooks invoice",
+						extra={"document_id": doc.id, "invoice_id": invoice.Id},
+					)
 
 	def disconnect(self):
 		"""Disconnect QuickBooks by removing tokens"""

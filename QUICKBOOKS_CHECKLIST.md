@@ -11,6 +11,8 @@ Use this checklist to complete your QuickBooks integration setup.
 - [ ] Note your **Client ID**: ___________________________
 - [ ] Note your **Client Secret**: ___________________________
 - [ ] Add Redirect URI: `https://idc-app.onrender.com/quickbooks/callback`
+- [ ] Add Privacy Policy URL: `https://your-frontend.vercel.app/privacy-policy`
+- [ ] Add EULA URL: `https://your-frontend.vercel.app/eula`
 - [ ] Save settings
 
 ## ☐ 2. Configure Environment Variables

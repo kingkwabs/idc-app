@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from './ui/button';
 
 export function LoginPage({ onSuccess }: { onSuccess: () => void }){
@@ -28,7 +29,10 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }){
       <input type="email" className="w-full border rounded px-3 py-2" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} />
       <input type="password" className="w-full border rounded px-3 py-2" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} />
       <Button className="w-full" onClick={submit}>Sign in</Button>
+      <div className="flex justify-center gap-4 pt-2 text-xs text-gray-500">
+        <Link className="hover:text-teal-700 hover:underline" to="/privacy-policy">Privacy Policy</Link>
+        <Link className="hover:text-teal-700 hover:underline" to="/eula">EULA</Link>
+      </div>
     </div>
   );
 }
-

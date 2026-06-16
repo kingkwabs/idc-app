@@ -19,6 +19,22 @@ Set these in the Render dashboard:
 - APP_USER: Admin username for login
 - APP_PASS: Admin password for login
 
+### Database Secrets
+
+Render should keep `DB_SECRET_NAME` pointed at the stable app config secret, for example:
+
+- `app/transactions-db-config`
+
+The backend follows `DB_CLUSTER_ARN` to the RDS cluster and reads the cluster's active RDS-managed rotating secret automatically. This keeps Render configuration stable when the database password rotates.
+
+The AWS key used by Render must be allowed to:
+
+- Read the stable app config secret.
+- Read the RDS-managed rotating secret named like `rds!cluster-...`.
+- Call `rds:DescribeDBClusters`.
+
+If you need to opt out of the RDS-managed credential secret, set `DB_USE_CLUSTER_MASTER_SECRET=false`.
+
 After deploy, note BACKEND_URL (https).
 
 ## Frontend on Vercel

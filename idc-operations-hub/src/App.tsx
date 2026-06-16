@@ -14,6 +14,7 @@ import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import { LoginPage } from "./components/LoginPage";
+import { LegalPage } from "./components/LegalPage";
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001';
 
@@ -47,6 +48,7 @@ export default function App() {
   };
 
   const path = location.pathname;
+  const isPublicLegalRoute = path === '/privacy-policy' || path === '/eula';
   const search = new URLSearchParams(location.search);
   const dashboardMode = search.get('view') === 'transactions-all' ? 'all' : 'recent';
   const currentView = path.startsWith('/clients')
@@ -96,6 +98,10 @@ export default function App() {
     </div>
   );
 
+  if (isPublicLegalRoute) {
+    return <LegalPage kind={path === '/privacy-policy' ? 'privacy' : 'eula'} />;
+  }
+
   if (!token) {
     return <LoginPage onSuccess={() => window.location.reload()} />;
   }
@@ -122,6 +128,8 @@ export default function App() {
               <Route path="/suppliers" element={<div className="p-8"><SuppliersPage /></div>} />
               <Route path="/employees" element={<div className="p-8"><EmployeesPage /></div>} />
               <Route path="/profile" element={<div className="p-8"><ProfilePage /></div>} />
+              <Route path="/privacy-policy" element={<LegalPage kind="privacy" />} />
+              <Route path="/eula" element={<LegalPage kind="eula" />} />
             </Routes>
           </main>
         </div>

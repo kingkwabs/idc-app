@@ -1,4 +1,4 @@
-import { Search, User, LogOut, ChevronDown, UserCircle } from "lucide-react";
+import { Search, User, LogOut, ChevronDown, UserCircle, FileText, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { useState, useEffect } from "react";
@@ -105,6 +105,14 @@ export function Header() {
             <DropdownMenuItem onClick={() => navigate('/profile')} className="cursor-pointer">
               <UserCircle className="mr-2 h-4 w-4" />
               <span>My Profile</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/privacy-policy')} className="cursor-pointer">
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              <span>Privacy Policy</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/eula')} className="cursor-pointer">
+              <FileText className="mr-2 h-4 w-4" />
+              <span>EULA</span>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleLogout} className="text-red-600 cursor-pointer">
               <LogOut className="mr-2 h-4 w-4" />

@@ -1,11 +1,12 @@
-import { LayoutDashboard, Users, Truck, Wallet, UserCheck, UserCog } from "lucide-react";
+import { LayoutDashboard, Settings, Truck, UserCheck, UserCog, Users, Wallet } from "lucide-react";
 
 type View =
   | "dashboard"
   | "transaction-detail"
   | "clients"
   | "suppliers"
-  | "employees";
+  | "employees"
+  | "quickbooks";
 
   interface SidebarProps {
     currentView: View;
@@ -24,6 +25,7 @@ const navItems = [
 
 const adminNavItems = [
   { name: "Employees", icon: UserCog, view: "employees" as View, adminOnly: true },
+  { name: "QuickBooks", icon: Settings, view: "quickbooks" as View, adminOnly: true },
 ];
 
 export function Sidebar({ currentView, onViewChange, userRole }: SidebarProps) {

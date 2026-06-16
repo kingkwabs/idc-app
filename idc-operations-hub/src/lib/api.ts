@@ -53,6 +53,17 @@ export interface AssociatedCostOut {
   created_at: string;
 }
 
+export interface QuickBooksStatus {
+  connected: boolean;
+  realm_id?: string;
+  token_expires_at?: string;
+  refresh_expires_at?: string;
+}
+
+export interface QuickBooksAuthorization {
+  authorization_url: string;
+}
+
 export function documentDownloadUrl(transactionId: number, documentId: number): string {
   return `${API_BASE}/api/transactions/${transactionId}/documents/${documentId}/download`;
 }
@@ -242,4 +253,25 @@ export async function updateAssociatedCost(transactionId: number, costId: number
 export async function deleteAssociatedCost(transactionId: number, costId: number): Promise<void>{
   const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/costs/${costId}`, { method: 'DELETE', headers: { ...authHeaders() } });
   if (!res.ok && res.status !== 204) throw new Error('Failed to delete cost');
+}
+
+export async function getQuickBooksStatus(): Promise<QuickBooksStatus> {
+  const res = await fetch(`${API_BASE}/quickbooks/status`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error(`Failed to fetch QuickBooks status: ${res.status}`);
+  return res.json();
+}
+
+export async function getQuickBooksAuthorizationUrl(): Promise<QuickBooksAuthorization> {
+  const res = await fetch(`${API_BASE}/quickbooks/auth/connect`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error(`Failed to start QuickBooks connection: ${res.status}`);
+  return res.json();
+}
+
+export async function disconnectQuickBooks(): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/quickbooks/disconnect`, {
+    method: 'POST',
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error(`Failed to disconnect QuickBooks: ${res.status}`);
+  return res.json();
 }

@@ -10,6 +10,7 @@ import { ClientsPage } from "./components/ClientsPage";
 import { SuppliersPage } from "./components/SuppliersPage";
 import { EmployeesPage } from "./components/EmployeesPage";
 import { ProfilePage } from "./components/ProfilePage";
+import { QuickBooksSettingsPage } from "./components/QuickBooksSettingsPage";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
@@ -57,11 +58,13 @@ export default function App() {
     ? 'suppliers'
     : path.startsWith('/employees')
     ? 'employees'
+    : path.startsWith('/quickbooks')
+    ? 'quickbooks'
     : path.startsWith('/transactions/')
     ? 'transaction-detail'
     : 'dashboard';
 
-  const handleSidebarNavigate = (view: "dashboard" | "transaction-detail" | "clients" | "suppliers" | "employees") => {
+  const handleSidebarNavigate = (view: "dashboard" | "transaction-detail" | "clients" | "suppliers" | "employees" | "quickbooks") => {
     switch (view) {
       case 'dashboard':
         navigate('/');
@@ -74,6 +77,9 @@ export default function App() {
         break;
       case 'employees':
         navigate('/employees');
+        break;
+      case 'quickbooks':
+        navigate('/quickbooks');
         break;
       default:
         navigate('/');
@@ -127,6 +133,7 @@ export default function App() {
               <Route path="/clients" element={<div className="p-8"><ClientsPage /></div>} />
               <Route path="/suppliers" element={<div className="p-8"><SuppliersPage /></div>} />
               <Route path="/employees" element={<div className="p-8"><EmployeesPage /></div>} />
+              <Route path="/quickbooks" element={<div className="p-8"><QuickBooksSettingsPage userRole={userRole} /></div>} />
               <Route path="/profile" element={<div className="p-8"><ProfilePage /></div>} />
               <Route path="/privacy-policy" element={<LegalPage kind="privacy" />} />
               <Route path="/eula" element={<LegalPage kind="eula" />} />

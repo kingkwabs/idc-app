@@ -39,6 +39,11 @@ export function FinancialsTab({ onInvoiceCreated, transactionId, clientPoAmount,
   const [newCost, setNewCost] = useState<{ description: string; amount: string; status: "paid"|"due"|"overdue" }>(()=>({ description: "", amount: "", status: "due" }));
   const parsedClient = useMemo(() => (clientAmount.trim() === "" ? null : Number(clientAmount)), [clientAmount]);
   const parsedSupplier = useMemo(() => (supplierAmount.trim() === "" ? null : Number(supplierAmount)), [supplierAmount]);
+  const linkedSupplierIds = useMemo(() => new Set(linkedSuppliers.map(supplier => supplier.id)), [linkedSuppliers]);
+  const unlinkedSuppliers = useMemo(
+    () => availableSuppliers.filter(supplier => !linkedSupplierIds.has(supplier.id)),
+    [availableSuppliers, linkedSupplierIds]
+  );
 
   useEffect(() => {
     (async () => {
@@ -138,7 +143,7 @@ export function FinancialsTab({ onInvoiceCreated, transactionId, clientPoAmount,
             )}
             <select className="border rounded px-2 py-1 text-sm" value={supplierToAdd} onChange={(e)=> setSupplierToAdd(e.target.value ? Number(e.target.value) : "") }>
               <option value="">Select supplier</option>
-              {availableSuppliers.filter(s=> !linkedSuppliers.some(ls=> ls.id === s.id)).map(s=> (
+              {unlinkedSuppliers.map(s=> (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>

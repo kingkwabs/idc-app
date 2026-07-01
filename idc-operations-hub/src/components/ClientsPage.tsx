@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "./ui/button";
 import { ClientKPICards } from "./ClientKPICards";
 import { ClientsTable } from "./ClientsTable";
 import { CreateClientModal } from "./CreateClientModal";
+import { fetchClientMetrics, type ClientMetricOut } from "../lib/api";
 
 interface ClientFormData {
   companyName: string;
@@ -16,6 +17,26 @@ interface ClientFormData {
 
 export function ClientsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [clients, setClients] = useState<ClientMetricOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetchClientMetrics();
+        if (!cancelled) setClients(res.items);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "Failed to load clients");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleCreateClient = (data: ClientFormData) => {
     console.log("Creating client:", data);
@@ -38,10 +59,10 @@ export function ClientsPage() {
       </div>
 
       {/* KPI Cards Section */}
-      <ClientKPICards />
+      <ClientKPICards clients={clients} loading={loading} />
 
       {/* Clients Table Section */}
-      <ClientsTable />
+      <ClientsTable clients={clients} loading={loading} error={error} />
 
       {/* Create Client Modal */}
       <CreateClientModal

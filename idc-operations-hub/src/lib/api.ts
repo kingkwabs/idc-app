@@ -34,6 +34,37 @@ export interface ClientOut {
   name: string;
 }
 
+export interface ClientMetricOut {
+  id: number;
+  name: string;
+  active_transactions: number;
+  completed_transactions: number;
+  total_revenue: number;
+}
+
+export interface SupplierOut {
+  id: number;
+  name: string;
+}
+
+export interface SupplierMetricOut {
+  id: number;
+  name: string;
+  quotes: number;
+  last_quoted?: string | null;
+}
+
+export interface SupplierSummary {
+  total_suppliers: number;
+  engaged_suppliers: number;
+  total_spend: number;
+}
+
+export interface TransactionSummary {
+  active_count: number;
+  total_revenue: number;
+}
+
 export interface SupplierQuoteOut {
   id: number;
   supplier_id: number;
@@ -74,6 +105,12 @@ export async function fetchTransactions(page = 1, size = 20): Promise<{ items: T
   return res.json();
 }
 
+export async function fetchTransactionSummary(): Promise<TransactionSummary> {
+  const res = await fetch(`${API_BASE}/api/transactions/summary`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error(`Failed to fetch transaction summary: ${res.status}`);
+  return res.json();
+}
+
 export async function createTransaction(payload: TransactionCreate): Promise<TransactionOut> {
   const res = await fetch(`${API_BASE}/api/transactions`, {
     method: "POST",
@@ -111,9 +148,27 @@ export async function fetchClients(): Promise<{ items: ClientOut[] }> {
   return res.json();
 }
 
-export async function fetchSuppliers(): Promise<{ items: ClientOut[] }> {
+export async function fetchClientMetrics(): Promise<{ items: ClientMetricOut[] }> {
+  const res = await fetch(`${API_BASE}/api/clients/metrics`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error(`Failed to fetch client metrics`);
+  return res.json();
+}
+
+export async function fetchSuppliers(): Promise<{ items: SupplierOut[] }> {
   const res = await fetch(`${API_BASE}/api/suppliers`, { headers: { ...authHeaders() } });
   if (!res.ok) throw new Error(`Failed to fetch suppliers`);
+  return res.json();
+}
+
+export async function fetchSupplierSummary(): Promise<SupplierSummary> {
+  const res = await fetch(`${API_BASE}/api/suppliers/summary`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error(`Failed to fetch supplier summary`);
+  return res.json();
+}
+
+export async function fetchSupplierMetrics(): Promise<{ items: SupplierMetricOut[] }> {
+  const res = await fetch(`${API_BASE}/api/suppliers/metrics`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error(`Failed to fetch supplier metrics`);
   return res.json();
 }
 
@@ -169,8 +224,16 @@ export async function addActivity(transactionId: number, payload: { action: stri
 }
 
 // Suppliers link
-export async function getTransactionSuppliers(transactionId: number): Promise<{ items: ClientOut[] }>{
+export async function getTransactionSuppliers(transactionId: number): Promise<{ items: SupplierOut[] }>{
   const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/suppliers`, { headers: { ...authHeaders() } });
+  if (!res.ok) throw new Error("Failed to fetch transaction suppliers");
+  return res.json();
+}
+
+export async function getBulkTransactionSuppliers(transactionIds: number[]): Promise<{ items: Array<{ transaction_id: number; suppliers: SupplierOut[] }> }>{
+  if (transactionIds.length === 0) return { items: [] };
+  const params = new URLSearchParams({ ids: transactionIds.join(",") });
+  const res = await fetch(`${API_BASE}/api/transactions/suppliers?${params.toString()}`, { headers: { ...authHeaders() } });
   if (!res.ok) throw new Error("Failed to fetch transaction suppliers");
   return res.json();
 }

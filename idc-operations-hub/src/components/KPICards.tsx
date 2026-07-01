@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchTransactions } from "../lib/api";
+import { fetchTransactionSummary } from "../lib/api";
 
 interface KPICardsProps {
   mode: "recent" | "all";
@@ -8,14 +8,6 @@ interface KPICardsProps {
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
-}
-
-function isInactiveStatus(status?: string | null): boolean {
-  if (!status) return false;
-  const s = status.toLowerCase();
-  if (s.includes("deliver")) return true; // delivered/fully delivered
-  if (s.includes("cancel")) return true; // cancelled/canceled
-  return false;
 }
 
 export function KPICards({ mode }: KPICardsProps) {
@@ -29,14 +21,10 @@ export function KPICards({ mode }: KPICardsProps) {
     (async () => {
       try {
         setLoading(true);
-        // Aggregate over (up to) all transactions for KPI accuracy
-        const res = await fetchTransactions(1, 1000);
+        const res = await fetchTransactionSummary();
         if (cancelled) return;
-        const items = res.items;
-        const active = items.filter(t => !isInactiveStatus(t.status));
-        setActiveCount(active.length);
-        const sum = items.reduce((acc, t) => acc + ((t as any).client_po_amount ?? t.client_quote_amount ?? 0), 0);
-        setTotalRevenue(sum);
+        setActiveCount(res.active_count);
+        setTotalRevenue(res.total_revenue);
       } finally {
         if (!cancelled) setLoading(false);
       }

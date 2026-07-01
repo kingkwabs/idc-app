@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MoreHorizontal, Edit, Eye } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -14,8 +14,10 @@ import {
 } from "./ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useNavigate } from "react-router-dom";
-import { fetchTransactions, updateTransaction, fetchClients, getTransactionSuppliers } from "../lib/api";
+import { fetchTransactions, updateTransaction, fetchClients, getBulkTransactionSuppliers } from "../lib/api";
 import type { TransactionOut } from "../lib/api";
+
+const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
 function getStatusBadge(status: string) {
   switch (status) {
@@ -44,7 +46,7 @@ function getStatusBadge(status: string) {
 
 function formatCurrency(amount: number | null | undefined) {
   const n = amount ?? 0;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
+  return currencyFormatter.format(n);
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -114,16 +116,16 @@ export function TransactionsTable({ mode = "recent" }: TransactionsTableProps) {
       const map = new Map<number, string>();
       clientsRes.items.forEach(c => map.set(c.id, c.name));
       setClients(map);
-      // load suppliers per transaction (best-effort)
       const supplierMap = new Map<number, string[]>();
-      await Promise.all(trxRes.items.map(async (t) => {
-        try {
-          const res = await getTransactionSuppliers(t.id);
-          supplierMap.set(t.id, res.items.map(s => s.name));
-        } catch {
-          supplierMap.set(t.id, []);
-        }
-      }));
+      trxRes.items.forEach(t => supplierMap.set(t.id, []));
+      try {
+        const supplierRes = await getBulkTransactionSuppliers(trxRes.items.map(t => t.id));
+        supplierRes.items.forEach(item => {
+          supplierMap.set(item.transaction_id, item.suppliers.map(s => s.name));
+        });
+      } catch {
+        // Supplier badges are helpful context, but the table should still load without them.
+      }
       setSuppliersByTransaction(supplierMap);
     } catch (e: any) {
       setError(e?.message || "Failed to load transactions");
@@ -155,15 +157,17 @@ export function TransactionsTable({ mode = "recent" }: TransactionsTableProps) {
     navigate(`/transactions/${id}`);
   };
 
-  const filteredSorted = rows
-    .filter(r => !filterStatus || (r.status || '').toLowerCase().includes(filterStatus.toLowerCase()))
-    .filter(r => {
-      if (!filterClient) return true;
+  const filteredSorted = useMemo(() => {
+    const statusTerm = filterStatus.trim().toLowerCase();
+    const clientTerm = filterClient.trim().toLowerCase();
+    const filtered = rows.filter(r => {
+      if (statusTerm && !(r.status || '').toLowerCase().includes(statusTerm)) return false;
+      if (!clientTerm) return true;
       const name = clients.get(r.client_id) || '';
-      return name.toLowerCase().includes(filterClient.toLowerCase());
-    })
-    .slice()
-    .sort((a, b) => {
+      return name.toLowerCase().includes(clientTerm);
+    });
+
+    return filtered.slice().sort((a, b) => {
       if (sortKey === 'client') {
         const an = (clients.get(a.client_id) || '').toLowerCase();
         const bn = (clients.get(b.client_id) || '').toLowerCase();
@@ -177,6 +181,7 @@ export function TransactionsTable({ mode = "recent" }: TransactionsTableProps) {
       // date sort not explicitly present; fallback to id (created order desc)
       return sortDir === 'asc' ? a.id - b.id : b.id - a.id;
     });
+  }, [clients, filterClient, filterStatus, rows, sortDir, sortKey]);
 
   return (
     <div className="glass-table rounded-lg overflow-hidden hover:shadow-2xl transition-all duration-300">

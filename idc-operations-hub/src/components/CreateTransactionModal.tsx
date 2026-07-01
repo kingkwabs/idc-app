@@ -31,13 +31,14 @@ export function CreateTransactionModal({ isOpen, onClose, onSubmit }: CreateTran
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!isOpen || clients.length > 0) return;
     let cancelled = false;
     (async () => {
       const res = await fetchClients();
       if (!cancelled) setClients(res.items);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [isOpen, clients.length]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

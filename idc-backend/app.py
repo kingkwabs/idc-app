@@ -1,6 +1,7 @@
 # app.py
 from flask import Flask, request, jsonify
 import os
+import time
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -18,6 +19,22 @@ from models import Base
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for all routes
+
+
+@app.before_request
+def start_request_timer():
+	request._started_at = time.perf_counter()
+
+
+@app.after_request
+def log_request_duration(response):
+	started_at = getattr(request, "_started_at", None)
+	if started_at is not None:
+		duration_ms = (time.perf_counter() - started_at) * 1000
+		response.headers["X-Response-Time-ms"] = f"{duration_ms:.1f}"
+		print(f"{request.method} {request.path} {response.status_code} {duration_ms:.1f}ms")
+	return response
+
 
 # Initialize DB engine on startup
 try:

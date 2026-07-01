@@ -9,14 +9,45 @@ import base64
 bp = Blueprint('transaction_extras', __name__, url_prefix='/api/transactions')
 
 
+@bp.get('/suppliers')
+def get_bulk_transaction_suppliers():
+	ids_param = request.args.get('ids', '')
+	try:
+		transaction_ids = sorted({int(raw_id) for raw_id in ids_param.split(',') if raw_id.strip()})
+	except ValueError:
+		return jsonify({"error": "ids must be a comma-separated list of transaction ids"}), 400
+
+	if not transaction_ids:
+		return jsonify({"items": []})
+
+	with db_session() as session:
+		stmt = (
+			select(TransactionSupplierLink.transaction_id, Supplier.id, Supplier.name)
+			.join(Supplier, TransactionSupplierLink.supplier_id == Supplier.id)
+			.where(TransactionSupplierLink.transaction_id.in_(transaction_ids))
+			.order_by(TransactionSupplierLink.transaction_id, Supplier.name)
+		)
+		grouped = {transaction_id: [] for transaction_id in transaction_ids}
+		for transaction_id, supplier_id, supplier_name in session.execute(stmt).all():
+			grouped.setdefault(transaction_id, []).append({"id": supplier_id, "name": supplier_name})
+
+		return jsonify({
+			"items": [
+				{"transaction_id": transaction_id, "suppliers": suppliers}
+				for transaction_id, suppliers in grouped.items()
+			]
+		})
+
+
 @bp.get('/<int:trx_id>/suppliers')
 def get_transaction_suppliers(trx_id: int):
 	with db_session() as session:
-		links = session.execute(select(TransactionSupplierLink).where(TransactionSupplierLink.transaction_id == trx_id)).scalars().all()
-		supplier_ids = [l.supplier_id for l in links]
-		suppliers = []
-		if supplier_ids:
-			suppliers = session.execute(select(Supplier).where(Supplier.id.in_(supplier_ids))).scalars().all()
+		suppliers = session.execute(
+			select(Supplier)
+			.join(TransactionSupplierLink, TransactionSupplierLink.supplier_id == Supplier.id)
+			.where(TransactionSupplierLink.transaction_id == trx_id)
+			.order_by(Supplier.name)
+		).scalars().all()
 		return jsonify({"items": [{"id": s.id, "name": s.name} for s in suppliers]})
 
 
@@ -290,4 +321,4 @@ def add_activity(trx_id: int):
 		return jsonify({"error": "action required"}), 400
 	with db_session() as session:
 		session.add(ActivityLog(transaction_id=trx_id, action=action, details=details))
-		return jsonify({"ok": True}), 201 
+		return jsonify({"ok": True}), 201

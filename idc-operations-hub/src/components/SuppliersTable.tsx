@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { Button } from "./ui/button";
 import {
@@ -7,32 +7,26 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { fetchSuppliers, listSupplierQuotes } from "../lib/api";
+import type { SupplierMetricOut } from "../lib/api";
 
 type Row = { id: number; name: string; quotes: number; lastQuoted?: string };
 
-export function SuppliersTable() {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+interface SuppliersTableProps {
+  suppliers: SupplierMetricOut[];
+  loading: boolean;
+  error: string | null;
+}
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const sup = await fetchSuppliers();
-      // Best-effort: fetch quote counts per supplier across recent transactions
-      // For now, just show suppliers list; quote stats can be enhanced later
-      const mapped: Row[] = sup.items.map(s => ({ id: s.id, name: s.name, quotes: 0 }));
-      setRows(mapped);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load suppliers');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
+export function SuppliersTable({ suppliers, loading, error }: SuppliersTableProps) {
+  const rows = useMemo<Row[]>(
+    () => suppliers.map(s => ({
+        id: s.id,
+        name: s.name,
+        quotes: s.quotes,
+        lastQuoted: s.last_quoted ?? undefined,
+      })),
+    [suppliers]
+  );
 
   return (
     <div className="overflow-hidden rounded-lg glass-table">

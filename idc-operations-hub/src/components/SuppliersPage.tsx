@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "./ui/button";
 import { SupplierKPICards } from "./SupplierKPICards";
 import { SuppliersTable } from "./SuppliersTable";
 import { CreateSupplierModal } from "./CreateSupplierModal";
+import { fetchSupplierMetrics, fetchSupplierSummary, type SupplierMetricOut, type SupplierSummary } from "../lib/api";
 
 interface SupplierFormData {
   companyName: string;
@@ -18,6 +19,35 @@ interface SupplierFormData {
 
 export function SuppliersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [summary, setSummary] = useState<SupplierSummary | null>(null);
+  const [suppliers, setSuppliers] = useState<SupplierMetricOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [summaryRes, metricsRes] = await Promise.all([
+          fetchSupplierSummary(),
+          fetchSupplierMetrics(),
+        ]);
+        if (cancelled) return;
+        setSummary(summaryRes);
+        setSuppliers(metricsRes.items);
+      } catch (e: any) {
+        if (cancelled) return;
+        setError(e?.message || "Failed to load suppliers");
+        setSummary(null);
+        setSuppliers([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleCreateSupplier = (data: SupplierFormData) => {
     console.log("Creating supplier:", data);
@@ -40,10 +70,10 @@ export function SuppliersPage() {
       </div>
 
       {/* KPI Cards Section */}
-      <SupplierKPICards />
+      <SupplierKPICards summary={summary} loading={loading} />
 
       {/* Suppliers Table Section */}
-      <SuppliersTable />
+      <SuppliersTable suppliers={suppliers} loading={loading} error={error} />
 
       {/* Create Supplier Modal */}
       <CreateSupplierModal

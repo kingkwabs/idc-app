@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ProgressTracker } from "./ProgressTracker";
 import { Button } from "./ui/button";
@@ -44,14 +44,19 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
   const [isInvoiceCreated, setIsInvoiceCreated] = useState(false);
   const [clientName, setClientName] = useState<string | null>(null);
 
+  const applyTransaction = useCallback((data: TransactionOut) => {
+    setTransaction(data);
+    const idx = STATUS_STEPS.indexOf(data.status || "rfq-from-client");
+    setCurrentProgressStep(idx >= 0 ? idx : 0);
+  }, []);
+
   const reload = async () => {
     if (!trxId) return;
     setLoading(true);
+    setError(null);
     try {
       const data = await fetchTransaction(trxId);
-      setTransaction(data);
-      const idx = STATUS_STEPS.indexOf(data.status || "rfq-from-client");
-      setCurrentProgressStep(idx >= 0 ? idx : 0);
+      applyTransaction(data);
     } catch (e: any) {
       setError(e?.message || "Failed to load transaction");
     } finally {
@@ -60,21 +65,28 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
   };
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !trxId) return;
+    let cancelled = false;
     (async () => {
-      await reload();
+      setLoading(true);
+      setError(null);
       try {
-        const clientsRes = await fetchClients();
-        if (trxId && clientsRes && clientsRes.items) {
-          const map = new Map<number, string>();
-          clientsRes.items.forEach((c: any) => map.set(c.id, c.name));
-          setClientName(map.get((await fetchTransaction(trxId)).client_id) || null);
-        }
-      } catch (e) {
-        // ignore load errors for now
+        const [data, clientsRes] = await Promise.all([
+          fetchTransaction(trxId),
+          fetchClients(),
+        ]);
+        if (cancelled) return;
+        applyTransaction(data);
+        const client = clientsRes.items.find(c => c.id === data.client_id);
+        setClientName(client?.name ?? null);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "Failed to load transaction");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [id]);
+    return () => { cancelled = true; };
+  }, [applyTransaction, id, trxId]);
 
   // no-op retained for potential future manual step selection
 

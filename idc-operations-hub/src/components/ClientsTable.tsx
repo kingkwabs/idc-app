@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -8,7 +8,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { fetchClients, fetchTransactions } from "../lib/api";
+import type { ClientMetricOut } from "../lib/api";
+
+const currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 type Row = {
   id: number;
@@ -18,39 +20,25 @@ type Row = {
   totalRevenue: number;
 };
 
-export function ClientsTable() {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+interface ClientsTableProps {
+  clients: ClientMetricOut[];
+  loading: boolean;
+  error: string | null;
+}
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+export function ClientsTable({ clients, loading, error }: ClientsTableProps) {
+  const formatCurrency = (amount: number) => currencyFormatter.format(amount);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [clientsRes, trxRes] = await Promise.all([
-        fetchClients(),
-        fetchTransactions(1, 1000),
-      ]);
-      const trx = trxRes.items;
-      const computed: Row[] = clientsRes.items.map(c => {
-        const mine = trx.filter(t => t.client_id === c.id);
-        const completed = mine.filter(t => (t.status || '') === 'loans-cleared').length;
-        const active = mine.length - completed;
-        const totalRevenue = mine.reduce((sum, t) => sum + Number(t.client_po_amount ?? t.client_quote_amount ?? 0), 0);
-        return { id: c.id, name: c.name, activeTransactions: active, completedTransactions: completed, totalRevenue };
-      });
-      setRows(computed);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load clients');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
+  const rows = useMemo<Row[]>(
+    () => clients.map(c => ({
+        id: c.id,
+        name: c.name,
+        activeTransactions: c.active_transactions,
+        completedTransactions: c.completed_transactions,
+        totalRevenue: c.total_revenue,
+      })),
+    [clients]
+  );
 
   return (
     <div className="glass-table rounded-lg overflow-hidden">

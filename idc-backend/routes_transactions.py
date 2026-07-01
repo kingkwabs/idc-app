@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from sqlalchemy import select, desc, delete
+from sqlalchemy import select, desc, delete, func, case, or_
 from sqlalchemy.exc import NoResultFound
 from database import db_session
 from models import Transaction, Document, ShipmentInfo, ActivityLog, TransactionSupplierLink
@@ -36,6 +36,27 @@ def list_transactions():
 		items = session.execute(stmt).scalars().all()
 		data = [TransactionOut.model_validate(i).model_dump() for i in items]
 		return jsonify({"items": data, "page": page, "size": size})
+
+
+@bp.get('/summary')
+def get_transactions_summary():
+	status_text = func.coalesce(func.lower(Transaction.status), "")
+	inactive_status = or_(
+		status_text.like("%deliver%"),
+		status_text.like("%cancel%"),
+		status_text == "loans-cleared",
+	)
+	revenue_amount = func.coalesce(Transaction.client_po_amount, Transaction.client_quote_amount, 0)
+	with db_session() as session:
+		stmt = select(
+			func.coalesce(func.sum(case((inactive_status, 0), else_=1)), 0).label("active_count"),
+			func.coalesce(func.sum(revenue_amount), 0).label("total_revenue"),
+		)
+		row = session.execute(stmt).one()
+		return jsonify({
+			"active_count": int(row.active_count or 0),
+			"total_revenue": float(row.total_revenue or 0),
+		})
 
 
 @bp.get('/<int:trx_id>')
@@ -80,4 +101,4 @@ def delete_transaction(trx_id: int):
 		session.execute(delete(TransactionSupplierLink).where(TransactionSupplierLink.transaction_id == trx_id))
 		# Then delete transaction
 		session.delete(obj)
-		return ('', 204) 
+		return ('', 204)

@@ -1,44 +1,20 @@
 import { Truck, DollarSign, Activity } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { fetchSuppliers, fetchTransactions, getTransactionSuppliers } from "../lib/api";
+import { useMemo } from "react";
+import type { SupplierSummary } from "../lib/api";
 
-export function SupplierKPICards() {
-  const [totalSuppliers, setTotalSuppliers] = useState<number>(0);
-  const [engagedSuppliers, setEngagedSuppliers] = useState<number>(0);
-  const [totalSpend, setTotalSpend] = useState<number>(0);
+const currencyFormatter = new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' });
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [supRes, trxRes] = await Promise.all([
-          fetchSuppliers(),
-          fetchTransactions(1, 200),
-        ]);
-        setTotalSuppliers(supRes.items.length);
-        // compute engaged suppliers across recent transactions
-        const engaged = new Set<number>();
-        await Promise.all(trxRes.items.map(async (t) => {
-          try {
-            const links = await getTransactionSuppliers(t.id);
-            links.items.forEach(s => engaged.add(s.id));
-          } catch {}
-        }));
-        setEngagedSuppliers(engaged.size);
-        // spend: placeholder until payments are tracked
-        setTotalSpend(0);
-      } catch {
-        setTotalSuppliers(0);
-        setEngagedSuppliers(0);
-        setTotalSpend(0);
-      }
-    })();
-  }, []);
+interface SupplierKPICardsProps {
+  summary: SupplierSummary | null;
+  loading: boolean;
+}
 
+export function SupplierKPICards({ summary, loading }: SupplierKPICardsProps) {
   const kpiData = useMemo(() => ([
-    { title: "Total Suppliers", value: String(totalSuppliers), icon: Truck, description: "Registered supplier partners" },
-    { title: "Total Spend (All Time)", value: new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' }).format(totalSpend), icon: DollarSign, description: "Cumulative supplier payments" },
-    { title: "Suppliers on Active Projects", value: String(engagedSuppliers), icon: Activity, description: "Currently engaged suppliers" },
-  ]), [totalSuppliers, totalSpend, engagedSuppliers]);
+    { title: "Total Suppliers", value: loading ? "—" : String(summary?.total_suppliers ?? 0), icon: Truck, description: "Registered supplier partners" },
+    { title: "Total Spend (All Time)", value: loading ? "—" : currencyFormatter.format(summary?.total_spend ?? 0), icon: DollarSign, description: "Cumulative supplier payments" },
+    { title: "Suppliers on Active Projects", value: loading ? "—" : String(summary?.engaged_suppliers ?? 0), icon: Activity, description: "Currently engaged suppliers" },
+  ]), [loading, summary]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

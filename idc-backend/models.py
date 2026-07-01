@@ -1,5 +1,5 @@
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy import Column, Integer, String, ForeignKey, Date, Numeric, Text, DateTime, LargeBinary
+from sqlalchemy import Column, Integer, String, ForeignKey, Date, Numeric, Text, DateTime, LargeBinary, Index
 from datetime import datetime
 
 Base = declarative_base()
@@ -44,6 +44,9 @@ class Supplier(Base):
 
 class Transaction(Base):
 	__tablename__ = "transactions"
+	__table_args__ = (
+		Index("ix_transactions_client_id", "client_id"),
+	)
 
 	id = Column(Integer, primary_key=True)
 	client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
@@ -70,6 +73,10 @@ class Transaction(Base):
 
 class TransactionSupplierLink(Base):
 	__tablename__ = "transaction_suppliers"
+	__table_args__ = (
+		Index("ix_transaction_suppliers_transaction_id", "transaction_id"),
+		Index("ix_transaction_suppliers_supplier_id", "supplier_id"),
+	)
 
 	id = Column(Integer, primary_key=True)
 	transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
@@ -78,6 +85,9 @@ class TransactionSupplierLink(Base):
 
 class Document(Base):
 	__tablename__ = "documents"
+	__table_args__ = (
+		Index("ix_documents_transaction_id", "transaction_id"),
+	)
 
 	id = Column(Integer, primary_key=True)
 	transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
@@ -94,6 +104,9 @@ class Document(Base):
 
 class ShipmentInfo(Base):
 	__tablename__ = "shipments"
+	__table_args__ = (
+		Index("ix_shipments_transaction_id", "transaction_id"),
+	)
 
 	id = Column(Integer, primary_key=True)
 	transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
@@ -107,6 +120,9 @@ class ShipmentInfo(Base):
 
 class ActivityLog(Base):
 	__tablename__ = "activity_logs"
+	__table_args__ = (
+		Index("ix_activity_logs_transaction_id", "transaction_id"),
+	)
 
 	id = Column(Integer, primary_key=True)
 	transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
@@ -119,6 +135,10 @@ class ActivityLog(Base):
 
 class SupplierQuote(Base):
 	__tablename__ = "supplier_quotes"
+	__table_args__ = (
+		Index("ix_supplier_quotes_transaction_id", "transaction_id"),
+		Index("ix_supplier_quotes_supplier_id", "supplier_id"),
+	)
 
 	id = Column(Integer, primary_key=True)
 	transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
@@ -132,6 +152,9 @@ class SupplierQuote(Base):
 
 class AssociatedCost(Base):
 	__tablename__ = "associated_costs"
+	__table_args__ = (
+		Index("ix_associated_costs_transaction_id", "transaction_id"),
+	)
 
 	id = Column(Integer, primary_key=True)
 	transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)

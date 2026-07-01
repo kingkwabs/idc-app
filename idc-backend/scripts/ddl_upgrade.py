@@ -48,6 +48,18 @@ STATEMENTS = [
         created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
     );
     """,
+	# lookup indexes for common transaction detail/dashboard paths
+	"""
+	CREATE INDEX IF NOT EXISTS ix_transactions_client_id ON transactions (client_id);
+	CREATE INDEX IF NOT EXISTS ix_transaction_suppliers_transaction_id ON transaction_suppliers (transaction_id);
+	CREATE INDEX IF NOT EXISTS ix_transaction_suppliers_supplier_id ON transaction_suppliers (supplier_id);
+	CREATE INDEX IF NOT EXISTS ix_documents_transaction_id ON documents (transaction_id);
+	CREATE INDEX IF NOT EXISTS ix_shipments_transaction_id ON shipments (transaction_id);
+	CREATE INDEX IF NOT EXISTS ix_activity_logs_transaction_id ON activity_logs (transaction_id);
+	CREATE INDEX IF NOT EXISTS ix_supplier_quotes_transaction_id ON supplier_quotes (transaction_id);
+	CREATE INDEX IF NOT EXISTS ix_supplier_quotes_supplier_id ON supplier_quotes (supplier_id);
+	CREATE INDEX IF NOT EXISTS ix_associated_costs_transaction_id ON associated_costs (transaction_id);
+	""",
 ]
 
 def main():
@@ -59,4 +71,4 @@ def main():
 	print("DDL upgrade completed.")
 
 if __name__ == "__main__":
-	main() 
+	main()

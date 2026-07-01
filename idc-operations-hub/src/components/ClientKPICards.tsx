@@ -1,42 +1,30 @@
 import { DollarSign, Users, Activity } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { fetchClients, fetchTransactions } from "../lib/api";
+import { useMemo } from "react";
+import type { ClientMetricOut } from "../lib/api";
 
-export function ClientKPICards() {
-  const [totalClients, setTotalClients] = useState<number>(0);
-  const [totalRevenue, setTotalRevenue] = useState<number>(0);
-  const [activeTransactions, setActiveTransactions] = useState<number>(0);
+const currencyFormatter = new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' });
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [clientsRes, trxRes] = await Promise.all([
-          fetchClients(),
-          fetchTransactions(1, 1000),
-        ]);
-        setTotalClients(clientsRes.items.length);
-        const trx = trxRes.items;
-        const revenue = trx.reduce((sum, t) => sum + Number(t.client_po_amount ?? t.client_quote_amount ?? 0), 0);
-        setTotalRevenue(revenue);
-        const active = trx.filter(t => {
-          const s = (t.status || '').toLowerCase();
-          return s !== 'loans-cleared' && s !== 'cancelled';
-        }).length;
-        setActiveTransactions(active);
-      } catch {
-        // fallback to zeros
-        setTotalClients(0);
-        setTotalRevenue(0);
-        setActiveTransactions(0);
-      }
-    })();
-  }, []);
+interface ClientKPICardsProps {
+  clients: ClientMetricOut[];
+  loading: boolean;
+}
+
+export function ClientKPICards({ clients, loading }: ClientKPICardsProps) {
+  const totals = useMemo(() => {
+    let totalRevenue = 0;
+    let activeTransactions = 0;
+    for (const client of clients) {
+      totalRevenue += client.total_revenue;
+      activeTransactions += client.active_transactions;
+    }
+    return { totalClients: clients.length, totalRevenue, activeTransactions };
+  }, [clients]);
 
   const kpiData = useMemo(() => ([
-    { title: "Total Clients", value: String(totalClients), icon: Users, description: "Active client accounts" },
-    { title: "Total Revenue (All Time)", value: new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' }).format(totalRevenue), icon: DollarSign, description: "Cumulative client revenue" },
-    { title: "Currently Active Transactions", value: String(activeTransactions), icon: Activity, description: "In-progress client projects" },
-  ]), [totalClients, totalRevenue, activeTransactions]);
+    { title: "Total Clients", value: loading ? "—" : String(totals.totalClients), icon: Users, description: "Active client accounts" },
+    { title: "Total Revenue (All Time)", value: loading ? "—" : currencyFormatter.format(totals.totalRevenue), icon: DollarSign, description: "Cumulative client revenue" },
+    { title: "Currently Active Transactions", value: loading ? "—" : String(totals.activeTransactions), icon: Activity, description: "In-progress client projects" },
+  ]), [loading, totals]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

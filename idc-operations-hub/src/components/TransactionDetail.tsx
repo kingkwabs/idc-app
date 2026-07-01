@@ -8,28 +8,11 @@ import { DocumentsTab } from "./DocumentsTab";
 import { ActivityLog } from "./ActivityLog";
 import { fetchTransaction, upsertShipment, updateTransaction, addActivity, updateRefs, fetchClients } from "../lib/api";
 import type { TransactionOut } from "../lib/api";
+import { getWorkflowStepIndex, getWorkflowStatusLabel, WORKFLOW_STEPS } from "../lib/workflowStatus";
 
 interface TransactionDetailProps {
   onBack: () => void;
 }
-
-const STATUS_STEPS: string[] = [
-  "rfq-from-client",
-  "rfqs-to-suppliers",
-  "receive-supplier-quotes",
-  "prepare-proposal",
-  "director-approval",
-  "proposal-sent-client",
-  "client-draft-po",
-  "po-to-suppliers",
-  "client-confirmed-po",
-  "commercial-arrangements",
-  "leadtime-shipping-arrangement",
-  "shipment-clearance-delivery",
-  "delivery-docs-submitted",
-  "payment-received",
-  "loans-cleared",
-];
 
 export function TransactionDetail({ onBack }: TransactionDetailProps) {
   const { id } = useParams();
@@ -46,8 +29,7 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
 
   const applyTransaction = useCallback((data: TransactionOut) => {
     setTransaction(data);
-    const idx = STATUS_STEPS.indexOf(data.status || "rfq-from-client");
-    setCurrentProgressStep(idx >= 0 ? idx : 0);
+    setCurrentProgressStep(getWorkflowStepIndex(data.status));
   }, []);
 
   const reload = async () => {
@@ -92,7 +74,7 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
 
   const handleTrackerAdvance = async (nextIndex: number) => {
     if (!trxId) return;
-    const statusId = STATUS_STEPS[nextIndex] || "rfq-from-client";
+    const statusId = WORKFLOW_STEPS[nextIndex]?.id || WORKFLOW_STEPS[0].id;
     await updateTransaction(trxId, { status: statusId });
     await addActivity(trxId, { action: "status-updated", details: statusId });
     setCurrentProgressStep(nextIndex);
@@ -193,7 +175,7 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
             </div>
             <div>
               <div className="text-gray-500">Status</div>
-              <div className="text-gray-900">{transaction?.status || "—"}</div>
+              <div className="text-gray-900">{getWorkflowStatusLabel(transaction?.status)}</div>
             </div>
             <div>
               <div className="text-gray-500">RFQ Number</div>

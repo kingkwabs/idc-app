@@ -16,32 +16,16 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/t
 import { useNavigate } from "react-router-dom";
 import { fetchTransactions, updateTransaction, fetchClients, getBulkTransactionSuppliers } from "../lib/api";
 import type { TransactionOut } from "../lib/api";
+import { getWorkflowStatusBadgeClass, getWorkflowStatusLabel } from "../lib/workflowStatus";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
 function getStatusBadge(status: string) {
-  switch (status) {
-    case "Delivered":
-      return (
-        <Badge className="bg-green-500/90 text-white hover:bg-green-600 backdrop-blur-sm border border-green-400/30">
-          {status}
-        </Badge>
-      );
-    case "Pending PO":
-      return (
-        <Badge className="bg-yellow-500/90 text-gray-900 hover:bg-yellow-600 backdrop-blur-sm border border-yellow-400/30">
-          {status}
-        </Badge>
-      );
-    case "In Progress":
-      return (
-        <Badge className="bg-blue-500/90 text-white hover:bg-blue-600 backdrop-blur-sm border border-blue-400/30">
-          {status}
-        </Badge>
-      );
-    default:
-      return <Badge variant="secondary">{status || "—"}</Badge>;
-  }
+  return (
+    <Badge className={`${getWorkflowStatusBadgeClass(status)} backdrop-blur-sm`}>
+      {getWorkflowStatusLabel(status)}
+    </Badge>
+  );
 }
 
 function formatCurrency(amount: number | null | undefined) {

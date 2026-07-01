@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Textarea } from "./ui/textarea";
+import { getWorkflowStatusLabel, MANUAL_WORKFLOW_STATUSES } from "../lib/workflowStatus";
 
 interface ManualStatusChangeModalProps {
   isOpen: boolean;
@@ -13,31 +14,11 @@ interface ManualStatusChangeModalProps {
   currentStatus?: string;
 }
 
-const statusOptions = [
-  { value: "rfq-from-client", label: "RFQ from Client" },
-  { value: "rfqs-to-suppliers", label: "Send RFQs to Suppliers" },
-  { value: "receive-supplier-quotes", label: "Receive Quotations" },
-  { value: "prepare-proposal", label: "Prepare Proposal" },
-  { value: "director-approval", label: "Director Approval" },
-  { value: "proposal-sent-client", label: "Approved Proposal Sent" },
-  { value: "client-draft-po", label: "Client Draft PO" },
-  { value: "po-to-suppliers", label: "PO to Suppliers" },
-  { value: "client-confirmed-po", label: "Client Confirmed PO" },
-  { value: "commercial-arrangements", label: "Commercial Arrangements" },
-  { value: "leadtime-shipping-arrangement", label: "Leadtime & Shipping Arrangement" },
-  { value: "shipment-clearance-delivery", label: "Shipment & Delivery" },
-  { value: "delivery-docs-submitted", label: "Delivery Docs Submitted" },
-  { value: "payment-received", label: "Payment Received" },
-  { value: "loans-cleared", label: "Loans Cleared" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "on-hold", label: "On Hold" },
-];
-
 export function ManualStatusChangeModal({
   isOpen,
   onClose,
   onSubmit,
-  currentStatus = "RFQ from Client"
+  currentStatus = "rfq-from-client"
 }: ManualStatusChangeModalProps) {
   const [formData, setFormData] = useState({
     newStatus: "",
@@ -99,7 +80,7 @@ export function ManualStatusChangeModal({
             <div className="flex items-center space-x-2">
               <AlertTriangle className="h-4 w-4 text-amber-500" />
               <Label className="text-sm font-medium text-gray-700">
-                Current Status: <span className="text-gray-900">{currentStatus}</span>
+                Current Status: <span className="text-gray-900">{getWorkflowStatusLabel(currentStatus)}</span>
               </Label>
             </div>
           </div>
@@ -121,8 +102,8 @@ export function ManualStatusChangeModal({
                 <SelectValue placeholder="Select new status..." />
               </SelectTrigger>
               <SelectContent className="glass backdrop-blur-sm">
-                {statusOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
+                {MANUAL_WORKFLOW_STATUSES.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
                     {option.label}
                   </SelectItem>
                 ))}

@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify
 import os
 import time
 try:
@@ -64,23 +64,6 @@ def health_check():
 		return jsonify({"status": "ok", "database": "connected"}), 200
 	except Exception as e:
 		return jsonify({"status": "degraded", "database": "error", "message": str(e)}), 503
-
-# Legacy demo endpoint kept for compatibility (prefer blueprint)
-@app.route('/api/transactions', methods=['POST'])
-def create_transaction_legacy():
-	data = request.get_json()
-	client = data.get('client')
-	transaction_name = data.get('transactionName')
-	print(f"Received new transaction: {transaction_name} for client {client}")
-	response = {
-		"message": "Transaction created successfully",
-		"transaction": {
-			"id": 123,
-			"name": transaction_name,
-			"status": "RFQ Received"
-		}
-	}
-	return jsonify(response), 201
 
 if __name__ == '__main__':
 	app.run(debug=True, port=5001) # Run on a different port than your frontend

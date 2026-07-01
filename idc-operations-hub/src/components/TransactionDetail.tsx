@@ -6,12 +6,16 @@ import { FinancialsTab } from "./FinancialsTab";
 import { ShipmentTab } from "./ShipmentTab";
 import { DocumentsTab } from "./DocumentsTab";
 import { ActivityLog } from "./ActivityLog";
-import { fetchTransaction, upsertShipment, updateTransaction, addActivity, updateRefs, fetchClients } from "../lib/api";
+import { deleteTransaction, fetchTransaction, upsertShipment, updateTransaction, addActivity, updateRefs, fetchClients } from "../lib/api";
 import type { TransactionOut } from "../lib/api";
 import { getWorkflowStepIndex, getWorkflowStatusLabel, WORKFLOW_STEPS } from "../lib/workflowStatus";
 
 interface TransactionDetailProps {
   onBack: () => void;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 export function TransactionDetail({ onBack }: TransactionDetailProps) {
@@ -30,6 +34,7 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
   const applyTransaction = useCallback((data: TransactionOut) => {
     setTransaction(data);
     setCurrentProgressStep(getWorkflowStepIndex(data.status));
+    setIsInvoiceCreated(Boolean(data.quickbooks_invoice_id));
   }, []);
 
   const reload = async () => {
@@ -39,8 +44,8 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
     try {
       const data = await fetchTransaction(trxId);
       applyTransaction(data);
-    } catch (e: any) {
-      setError(e?.message || "Failed to load transaction");
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, "Failed to load transaction"));
     } finally {
       setLoading(false);
     }
@@ -61,8 +66,8 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
         applyTransaction(data);
         const client = clientsRes.items.find(c => c.id === data.client_id);
         setClientName(client?.name ?? null);
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || "Failed to load transaction");
+      } catch (error: unknown) {
+        if (!cancelled) setError(getErrorMessage(error, "Failed to load transaction"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -84,9 +89,8 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
   useEffect(() => {
     if (activeTab === "documents" && currentProgressStep > 0) {
       setIsShipmentConfirmed(false);
-      setIsInvoiceCreated(false);
     }
-  }, [activeTab]);
+  }, [activeTab, currentProgressStep]);
 
   const handleShipmentConfirmed = async (payload: { leadTime?: string; trackingNumber?: string; shippedDate?: string; etaDate?: string; }) => {
     if (!trxId) return;
@@ -104,20 +108,30 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
 
   const handleInvoiceCreated = async () => {
     if (!trxId) return;
-    await updateTransaction(trxId, { status: "payment-received" });
-    await addActivity(trxId, { action: "invoice-created", details: "Invoice recorded" });
     setIsInvoiceCreated(true);
     await reload();
   };
 
   const renderActiveTab = () => {
     if (activeTab === "financials") {
-      return isInvoiceCreated ? (
-        <div className="p-4">
-          <p className="text-green-600">Invoice has already been created and payment is recorded.</p>
+      return (
+        <div className="space-y-4">
+          {isInvoiceCreated ? (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+              <p className="text-green-700">
+                Invoice has been created in QuickBooks. Mark payment received only when the client payment lands.
+              </p>
+            </div>
+          ) : null}
+          <FinancialsTab
+            onInvoiceCreated={handleInvoiceCreated}
+            transactionId={trxId}
+            clientPoAmount={transaction?.client_po_amount ?? null}
+            clientQuoteAmount={transaction?.client_quote_amount ?? null}
+            supplierPoAmount={transaction?.supplier_po_amount ?? null}
+            onAmountsSaved={reload}
+          />
         </div>
-      ) : (
-        <FinancialsTab onInvoiceCreated={handleInvoiceCreated} transactionId={trxId} clientPoAmount={(transaction as any)?.client_po_amount ?? null} supplierPoAmount={(transaction as any)?.supplier_po_amount ?? null} onAmountsSaved={reload} />
       );
     }
 
@@ -144,14 +158,13 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
           <Button onClick={() => setActiveTab("documents")} variant={activeTab === "documents" ? "default" : "outline"}>Documents</Button>
           <Button onClick={() => setActiveTab("shipment")} variant={activeTab === "shipment" ? "default" : "outline"}>Shipment</Button>
           <Button onClick={() => setActiveTab("financials")} variant={activeTab === "financials" ? "default" : "outline"}>Financials</Button>
-          <Button variant="outline" onClick={() => navigate(-1)}>Back</Button>
+          <Button variant="outline" onClick={onBack}>Back</Button>
           {trxId ? (
             <Button variant="destructive" className="bg-red-600 hover:bg-red-700 text-white shadow-lg" onClick={async () => {
               const confirmed = window.confirm("This will permanently delete the transaction and all associated records (documents, shipment, activity). This action cannot be undone. Continue?");
               if (!confirmed) return;
               try {
-                const mod = await import('../lib/api');
-                await mod.deleteTransaction(trxId);
+                await deleteTransaction(trxId);
                 navigate('/');
               } catch (e) {
                 console.error(e);
@@ -196,10 +209,10 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
             <div>
               <div className="text-gray-500">Client PO Number</div>
               <div className="flex items-center gap-2">
-                <span className="text-gray-900">{(transaction as any)?.client_po_number || "—"}</span>
+                <span className="text-gray-900">{transaction?.client_po_number || "—"}</span>
                 {trxId ? (
                   <Button size="sm" variant="outline" onClick={async () => {
-                    const val = window.prompt("Enter Client PO Number:", (transaction as any)?.client_po_number || "");
+                    const val = window.prompt("Enter Client PO Number:", transaction?.client_po_number || "");
                     if (val !== null) {
                       await updateRefs(trxId, { client_po_number: val || undefined });
                       await addActivity(trxId, { action: "refs-updated", details: `cpo:${val}` });
@@ -212,10 +225,10 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
             <div>
               <div className="text-gray-500">Supplier PO Number</div>
               <div className="flex items-center gap-2">
-                <span className="text-gray-900">{(transaction as any)?.supplier_po_number || "—"}</span>
+                <span className="text-gray-900">{transaction?.supplier_po_number || "—"}</span>
                 {trxId ? (
                   <Button size="sm" variant="outline" onClick={async () => {
-                    const val = window.prompt("Enter Supplier PO Number:", (transaction as any)?.supplier_po_number || "");
+                    const val = window.prompt("Enter Supplier PO Number:", transaction?.supplier_po_number || "");
                     if (val !== null) {
                       await updateRefs(trxId, { supplier_po_number: val || undefined });
                       await addActivity(trxId, { action: "refs-updated", details: `spo:${val}` });

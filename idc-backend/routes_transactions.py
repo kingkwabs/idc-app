@@ -84,6 +84,10 @@ def update_transaction(trx_id: int):
 			obj.client_quote_amount = data.client_quote_amount
 		if data.client_quote_currency is not None:
 			obj.client_quote_currency = data.client_quote_currency
+		if data.client_po_amount is not None:
+			obj.client_po_amount = data.client_po_amount
+		if data.supplier_po_amount is not None:
+			obj.supplier_po_amount = data.supplier_po_amount
 		session.add(obj)
 		return jsonify(TransactionOut.model_validate(obj).model_dump())
 

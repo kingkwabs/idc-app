@@ -18,6 +18,9 @@ export interface TransactionOut {
   status?: string | null;
   client_quote_amount?: number | null;
   client_quote_currency?: string | null;
+  quickbooks_invoice_id?: string | null;
+  quickbooks_invoice_number?: string | null;
+  invoiced_at?: string | null;
 }
 
 export type TransactionCreate = {
@@ -93,6 +96,82 @@ export interface QuickBooksStatus {
 
 export interface QuickBooksAuthorization {
   authorization_url: string;
+}
+
+export interface QuickBooksInvoicePayload {
+  selected_quote_id?: number | null;
+  billable_cost_ids?: number[];
+  custom_notes?: string;
+}
+
+export interface QuickBooksInvoiceLineItem {
+  description: string;
+  amount: number;
+  quantity: number;
+  source: 'client_billable_amount' | 'associated_cost';
+  reference?: string;
+  cost_id?: number;
+  billable: boolean;
+}
+
+export interface QuickBooksInvoicePreview {
+  transaction_id: number;
+  can_create: boolean;
+  already_invoiced: boolean;
+  invoice_id?: string | null;
+  invoice_number?: string | null;
+  invoice_customer_name?: string | null;
+  line_items: QuickBooksInvoiceLineItem[];
+  billable_cost_ids: number[];
+  selected_supplier_quote?: {
+    id: number;
+    supplier_id: number;
+    supplier_name?: string | null;
+    amount: number;
+    currency: string;
+    lead_time_days?: number | null;
+  } | null;
+  totals: {
+    client_billable_amount: number;
+    billable_costs_total: number;
+    invoice_total: number;
+    internal_supplier_quote_total: number;
+    internal_supplier_po_amount: number;
+    internal_supplier_cost_basis: number;
+    internal_associated_costs_total: number;
+    estimated_margin: number;
+  };
+  notes: string;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface QuickBooksInvoiceCreateResult {
+  message: string;
+  invoice_id: string;
+  invoice_number: string;
+  total: string;
+  invoice_preview: QuickBooksInvoicePreview;
+}
+
+export interface ApiErrorPayload {
+  error?: string;
+  details?: string;
+  errors?: string[];
+  warnings?: string[];
+  invoice_number?: string;
+  invoice_preview?: QuickBooksInvoicePreview;
+}
+
+async function readErrorPayload(res: Response): Promise<ApiErrorPayload> {
+  try {
+    const payload: unknown = await res.json();
+    return typeof payload === "object" && payload !== null
+      ? payload as ApiErrorPayload
+      : { error: `Request failed with status ${res.status}` };
+  } catch {
+    return { error: `Request failed with status ${res.status}` };
+  }
 }
 
 export function documentDownloadUrl(transactionId: number, documentId: number): string {
@@ -299,7 +378,7 @@ export async function listAssociatedCosts(transactionId: number): Promise<{ item
 
 export async function createAssociatedCost(transactionId: number, payload: { description: string; amount: number; status?: 'paid'|'due'|'overdue' }): Promise<{ id: number }>{
   const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/costs`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(payload)
   });
   if (!res.ok) throw new Error('Failed to create cost');
   return res.json();
@@ -336,5 +415,35 @@ export async function disconnectQuickBooks(): Promise<{ message: string }> {
     headers: { ...authHeaders() },
   });
   if (!res.ok) throw new Error(`Failed to disconnect QuickBooks: ${res.status}`);
+  return res.json();
+}
+
+export async function previewQuickBooksInvoice(transactionId: number, payload: QuickBooksInvoicePayload): Promise<QuickBooksInvoicePreview> {
+  const res = await fetch(`${API_BASE}/quickbooks/transactions/${transactionId}/invoice-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const error = await readErrorPayload(res);
+    throw Object.assign(new Error(error.details || error.error || 'Failed to preview QuickBooks invoice'), { payload: error });
+  }
+
+  return res.json();
+}
+
+export async function createQuickBooksInvoice(transactionId: number, payload: QuickBooksInvoicePayload): Promise<QuickBooksInvoiceCreateResult> {
+  const res = await fetch(`${API_BASE}/quickbooks/transactions/${transactionId}/create-invoice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const error = await readErrorPayload(res);
+    throw Object.assign(new Error(error.details || error.error || 'Failed to create QuickBooks invoice'), { payload: error });
+  }
+
   return res.json();
 }

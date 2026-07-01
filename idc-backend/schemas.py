@@ -93,6 +93,9 @@ class TransactionOut(BaseModel):
 	status: Optional[str]
 	client_quote_amount: Optional[float]
 	client_quote_currency: Optional[str]
+	quickbooks_invoice_id: Optional[str]
+	quickbooks_invoice_number: Optional[str]
+	invoiced_at: Optional[datetime]
 
 	class Config:
 		from_attributes = True
@@ -103,4 +106,4 @@ class ClientOut(BaseModel):
 	name: str
 
 	class Config:
-		from_attributes = True 
+		from_attributes = True

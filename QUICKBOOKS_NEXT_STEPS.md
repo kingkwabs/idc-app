@@ -1,231 +1,76 @@
-# QuickBooks Integration - Next Steps
+# QuickBooks v1 Rollout Steps
 
-## Current Status ✅
+The backend safety implementation is ready for sandbox validation, not an unreviewed production launch. Complete these steps in order.
 
-Your QuickBooks integration code is **complete and ready to use**. Here's what's already done:
+## 1. Confirm deployment configuration
 
-- ✅ Backend service layer (`quickbooks_service.py`)
-- ✅ API routes for OAuth and invoice creation (`routes_quickbooks.py`)
-- ✅ Database models with QuickBooks fields (`models.py`)
-- ✅ Frontend invoice creation UI (`FinancialsTab.tsx`)
-- ✅ Comprehensive test script (`test_quickbooks.py`)
-- ✅ Database migration script (`scripts/migrate_quickbooks.py`)
-- ✅ Setup documentation (`QUICKBOOKS_SETUP.md`)
+Set and protect:
 
----
-
-## What You Need to Do Now 🚀
-
-### 1. Create QuickBooks Developer App (15 minutes)
-
-1. Go to https://developer.intuit.com/
-2. Sign in with your Intuit account
-3. Click "My Apps" → "Create an app"
-4. Select "QuickBooks Online and Payments"
-5. Name it: "IDC Energy Database"
-6. Go to "Keys & OAuth" tab:
-   - Copy your **Client ID**
-   - Copy your **Client Secret**
-   - Add Redirect URI: `https://idc-app.onrender.com/quickbooks/callback`
-     (or whatever your backend URL is)
-
-### 2. Add Environment Variables to Backend (5 minutes)
-
-#### On Render:
-1. Go to your Render dashboard
-2. Select your backend service (idc-app)
-3. Go to "Environment" tab
-4. Add these 4 variables:
-
-```
-QB_CLIENT_ID=<paste your client ID>
-QB_CLIENT_SECRET=<paste your client secret>
-QB_REDIRECT_URI=https://idc-app.onrender.com/quickbooks/callback
-QB_ENVIRONMENT=production
+```text
+QB_CLIENT_ID
+QB_CLIENT_SECRET
+QB_REDIRECT_URI
+QB_ENVIRONMENT
+QB_TOKEN_ENCRYPTION_KEY
+QB_SERVICE_ITEM_NAME
+FRONTEND_URL
+JWT_SECRET
 ```
 
-5. Click "Save Changes" (will trigger redeploy)
+Production requires a valid Fernet key. Preserve the key separately from the database backup because both are required to recover the connection.
 
-#### Locally (for testing):
-Add to `/idc-backend/.env`:
-```bash
-QB_CLIENT_ID=your_client_id
-QB_CLIENT_SECRET=your_client_secret
-QB_REDIRECT_URI=http://localhost:5001/quickbooks/callback
-QB_ENVIRONMENT=sandbox  # use sandbox for local testing
-```
+## 2. Prepare the QuickBooks company
 
-### 3. Run Database Migration (5 minutes)
+Create the configured item as an active QuickBooks `Service` item with the intended income account and tax settings. The integration does not create items, guess an income account, calculate tax, or convert currency. Version 1 accepts USD transactions only.
 
-Option A - Via Migration Script (when you have DB access):
+Use sandbox credentials and a disposable company first. Register the callback URL exactly as configured in `QB_REDIRECT_URI`.
+
+## 3. Upgrade and verify the database
+
+Run the normal deployment schema upgrade and confirm the token singleton, OAuth state, customer mapping, and invoice attempt constraints exist. Confirm the three new transaction synchronization columns are present. If more than one legacy token row exists, the upgrade intentionally stops for manual reconciliation.
+
+If `quickbooks_tokens` already contains plaintext, back up the database and encryption key before the first request. With the key configured, the first credential read migrates all legacy fields under a token-row lock. Check for `qb:v1:` envelopes without printing or exporting their values.
+
+## 4. Run automated verification
+
 ```bash
 cd idc-backend
-python scripts/migrate_quickbooks.py
+uv run --isolated --with-requirements requirements.txt pytest -q tests/test_qb_token_crypto.py tests/test_quickbooks_service.py tests/test_routes_quickbooks.py
+uv run --isolated --with-requirements requirements-runtime.txt python -m py_compile quickbooks_service.py routes_quickbooks.py qb_token_crypto.py
 ```
 
-Option B - Run SQL directly on AWS RDS:
-```sql
--- Add QB customer tracking to clients
-ALTER TABLE clients ADD COLUMN IF NOT EXISTS quickbooks_customer_id VARCHAR;
+These tests are fully mocked and block HTTP. The optional `test_quickbooks.py` smoke tool is sandbox-only, requires `QB_ALLOW_SANDBOX_SMOKE=true`, and must never run against production.
 
--- Add QB invoice tracking to transactions
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS quickbooks_invoice_id VARCHAR;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS quickbooks_invoice_number VARCHAR;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMP;
+## 5. Validate OAuth in sandbox
 
--- Create QuickBooks tokens table
-CREATE TABLE IF NOT EXISTS quickbooks_tokens (
-    id SERIAL PRIMARY KEY,
-    realm_id VARCHAR NOT NULL,
-    access_token TEXT NOT NULL,
-    refresh_token TEXT NOT NULL,
-    token_expires_at TIMESTAMP NOT NULL,
-    refresh_expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-```
+1. Sign in to IDC as an admin.
+2. Start connection from the QuickBooks settings page.
+3. Authorize the sandbox company.
+4. Confirm the browser lands on `/quickbooks?connection=success`.
+5. Confirm `/quickbooks/status` reports `connected: true` without realm or token fields.
+6. Replay the callback URL and confirm it redirects with `connection=error`.
 
-### 4. Connect QuickBooks (First Time) (10 minutes)
+## 6. Validate one sandbox invoice
 
-After your backend redeploys with the new environment variables:
+1. Create a disposable IDC transaction with a positive client PO amount.
+2. Preview the invoice.
+3. Select only costs that should be billed to the customer.
+4. Confirm customer memo text is 650 characters or fewer and all invoice line descriptions are 4,000 characters or fewer.
+5. If a selected supplier quote is not USD, confirm it is excluded from the USD margin basis.
+6. Create the invoice once.
+7. Confirm the configured service item, customer, amount, and memo in QuickBooks.
+8. Confirm no attachment was uploaded.
+9. Confirm the local attempt is `succeeded` and the transaction synchronization fields are populated.
+10. Repeat the create action and confirm no second invoice is created.
 
-1. Log into your app as an admin
-2. Get an admin JWT token from localStorage or via login
-3. Get the authorization URL:
+Exercise a mocked timeout or controlled sandbox failure before production. An uncertain invoice result must remain `unknown` and retry with the same request ID and unchanged payload.
 
-```bash
-curl -X GET https://idc-app.onrender.com/quickbooks/auth/connect \
-  -H "Authorization: Bearer YOUR_ADMIN_JWT_TOKEN"
-```
+## 7. Validate disconnect
 
-4. Copy the `authorization_url` from the response
-5. Open it in your browser
-6. Sign in to QuickBooks and click "Authorize"
-7. You'll be redirected back to your app
+Disconnect from the admin settings page. Confirm remote revocation succeeds before the local token row disappears. If Intuit is unavailable, expect `502` and confirm the local token row remains.
 
-### 5. Test It! (15 minutes)
+## 8. Production decision
 
-#### Test via UI:
-1. Open any transaction in your app
-2. Go to Financials tab
-3. Add a supplier quote
-4. Add some associated costs (shipping, etc.)
-5. Click "Create Invoice in QuickBooks"
-6. Check your QuickBooks account - invoice should appear!
+Move to production credentials only after the sandbox evidence is reviewed. Recheck callback URLs, frontend URL, service item name, encryption-key backup, database backup, admin access, and the absence of pending or unknown sandbox attempts.
 
-#### Test via Script (locally):
-```bash
-cd idc-backend
-
-# Check connection
-python test_quickbooks.py check-connection
-
-# Run full end-to-end test
-python test_quickbooks.py full-test
-
-# Test specific features
-python test_quickbooks.py test-customer --client-id 1
-python test_quickbooks.py test-invoice --transaction-id 1
-```
-
----
-
-## Quick Commands Reference
-
-### Check if QuickBooks is connected:
-```bash
-curl https://idc-app.onrender.com/quickbooks/status \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-### Create an invoice for transaction #123:
-```bash
-curl -X POST https://idc-app.onrender.com/quickbooks/transactions/123/create-invoice \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "selected_quote_id": 5,
-    "include_associated_costs": true,
-    "custom_notes": "Thanks for your business!"
-  }'
-```
-
-### Disconnect QuickBooks:
-```bash
-curl -X POST https://idc-app.onrender.com/quickbooks/disconnect \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
----
-
-## Troubleshooting
-
-### Can't connect to database locally?
-- AWS RDS likely blocks your IP
-- Run the SQL migration commands directly on AWS RDS via pgAdmin or AWS Console
-- Or deploy to production and let SQLAlchemy auto-create tables
-
-### "Module not found" errors?
-Check your requirements.txt has:
-```
-intuit-oauth==1.2.4
-python-quickbooks==0.9.5
-```
-
-Then reinstall:
-```bash
-pip install -r requirements.txt
-```
-
-### OAuth redirect doesn't work?
-- Make sure QB_REDIRECT_URI matches exactly what's in Intuit Developer Portal
-- Must be HTTPS in production (HTTP only works for localhost)
-- Check that the routes are registered in app.py
-
-### Invoice creation fails?
-- Check that you have at least one line item (client PO amount or quote)
-- Verify QuickBooks connection is active: `/quickbooks/status`
-- Check backend logs on Render for detailed errors
-- Make sure QuickBooks account has invoice creation permissions
-
----
-
-## Production Checklist
-
-Before going live with QuickBooks integration:
-
-- [ ] QuickBooks app created in developer portal
-- [ ] Environment variables set on Render
-- [ ] Database migration completed
-- [ ] OAuth flow tested and connected
-- [ ] Test invoice created successfully
-- [ ] Invoice appears correctly in QuickBooks
-- [ ] Customer auto-creation tested
-- [ ] Document attachment tested (optional)
-- [ ] Admin permissions configured
-- [ ] Token refresh tested (wait 1 hour or manually expire token)
-
----
-
-## Summary
-
-**Time to complete:** ~50 minutes
-
-**What's working:**
-- All code is complete and tested
-- Frontend UI ready
-- OAuth flow implemented
-- Invoice creation with line items
-- Customer auto-creation
-- Token management and refresh
-
-**What you need:**
-1. QuickBooks developer credentials
-2. Environment variables configured
-3. Database migration run
-4. OAuth connection established
-
-**Then you're done!** 🎉
-
-Your team can start creating QuickBooks invoices directly from transactions.
+Attachments, automatic service-item creation, non-USD invoices, multi-company connections, webhook reconciliation, and arbitrary replay with changed invoice data are outside v1 scope.

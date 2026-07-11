@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Clock, FileText, DollarSign, User } from "lucide-react";
+import { AlertCircle, Clock3 } from "lucide-react";
+
 import { listActivity } from "../lib/api";
+import { Skeleton } from "./ui/skeleton";
 
 interface ActivityLogProps {
   transactionId: number;
@@ -13,55 +15,116 @@ interface ActivityItem {
   created_at: string;
 }
 
+const timestampFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Activity history is unavailable";
+}
+
+function formatAction(action: string): string {
+  const label = action.replace(/[-_]+/g, " ").trim();
+  return label ? label.charAt(0).toUpperCase() + label.slice(1) : "Transaction updated";
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Time unavailable";
+  return timestampFormatter.format(date);
+}
+
 export function ActivityLog({ transactionId }: ActivityLogProps) {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    void (async () => {
+      setLoading(true);
+      setError(null);
+
       try {
-        setLoading(true);
-        const res = await listActivity(transactionId);
-        if (cancelled) return;
-        setItems(res.items);
+        const response = await listActivity(transactionId);
+        if (!cancelled) setItems(response.items);
+      } catch (loadError: unknown) {
+        if (!cancelled) setError(errorMessage(loadError));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [transactionId]);
 
   return (
-    <div className="glass-card rounded-lg p-6 hover:shadow-xl transition-all duration-300">
-      <h3 className="text-lg font-medium text-gray-900 mb-6">Activity Log</h3>
+    <section aria-labelledby="activity-log-title" aria-busy={loading} className="overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)]">
+      <header className="flex items-center justify-between gap-4 border-b bg-secondary px-5 py-4">
+        <div>
+          <h3 id="activity-log-title" className="text-base font-semibold tracking-tight text-foreground">Activity log</h3>
+          <p className="mt-0.5 text-sm text-muted-foreground">Recorded changes to this transaction.</p>
+        </div>
+        <span className="text-sm font-medium text-muted-foreground" aria-live="polite">
+          {loading ? "Loading" : error ? "Unavailable" : `${items.length} ${items.length === 1 ? "event" : "events"}`}
+        </span>
+      </header>
+
       {loading ? (
-        <p className="text-sm text-gray-500">Loading...</p>
-      ) : (
-        <div className="space-y-4">
-          {items.map((activity) => (
-            <div 
-              key={activity.id} 
-              className="flex items-start gap-4 p-3 rounded-lg hover:bg-white/30 transition-all duration-200 group"
-            >
-              <div className="flex-shrink-0 w-8 h-8 bg-white/40 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/20 group-hover:bg-white/50 transition-all duration-200">
-                <Clock className="w-4 h-4 text-gray-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-900">
-                  <span className="font-medium">{activity.action}</span>{activity.details ? ` — ${activity.details}` : ""}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {new Date(activity.created_at).toLocaleString()}
-                </p>
+        <div className="space-y-1 p-3 sm:p-4">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index} className="flex items-start gap-3 px-2 py-3">
+              <Skeleton className="size-8 shrink-0 rounded-full" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-36" />
               </div>
             </div>
           ))}
-          {items.length === 0 && (
-            <p className="text-sm text-gray-500">No recent activity.</p>
-          )}
         </div>
+      ) : error ? (
+        <div role="alert" className="flex items-start gap-3 px-5 py-8 text-destructive">
+          <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-medium">Activity could not be loaded</p>
+            <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+          </div>
+        </div>
+      ) : items.length === 0 ? (
+        <div className="flex flex-col items-center px-5 py-10 text-center">
+          <span className="flex size-10 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+            <Clock3 aria-hidden="true" className="size-5" />
+          </span>
+          <p className="mt-3 font-medium text-foreground">No activity recorded yet</p>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">Status changes, uploads, and financial updates will appear here.</p>
+        </div>
+      ) : (
+        <ol className="divide-y">
+          {items.map((activity) => (
+            <li key={activity.id} className="flex items-start gap-3 px-5 py-4">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full border bg-secondary text-muted-foreground">
+                <Clock3 aria-hidden="true" className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="break-words text-sm text-foreground">
+                  <span className="font-medium">{formatAction(activity.action)}</span>
+                  {activity.details ? <span className="text-muted-foreground">: {activity.details}</span> : null}
+                </p>
+                <time dateTime={activity.created_at} className="mt-1 block text-xs text-muted-foreground">
+                  {formatTimestamp(activity.created_at)}
+                </time>
+              </div>
+            </li>
+          ))}
+        </ol>
       )}
-    </div>
+    </section>
   );
 }

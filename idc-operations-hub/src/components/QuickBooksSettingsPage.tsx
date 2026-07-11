@@ -1,35 +1,34 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
   Clock3,
   ExternalLink,
+  KeyRound,
   Link2,
+  LoaderCircle,
   RefreshCw,
   ServerCog,
   ShieldCheck,
   Unlink,
 } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "./ui/card";
-import { Separator } from "./ui/separator";
+
 import {
   disconnectQuickBooks,
   getQuickBooksAuthorizationUrl,
   getQuickBooksStatus,
   type QuickBooksStatus,
 } from "../lib/api";
+import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Separator } from "./ui/separator";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5001";
-const REDIRECT_URI = `${API_BASE}/quickbooks/callback`;
+const REDIRECT_URI = import.meta.env.VITE_QB_REDIRECT_URI?.trim()
+  || "https://idc-app.onrender.com/quickbooks/callback";
 
 interface QuickBooksSettingsPageProps {
   userRole: string;
@@ -37,24 +36,36 @@ interface QuickBooksSettingsPageProps {
 
 function formatDate(value?: string) {
   if (!value) return "Not available";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not available";
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function daysUntil(value?: string) {
   if (!value) return null;
-  const diff = new Date(value).getTime() - Date.now();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) return null;
+  return Math.ceil((timestamp - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-white/60 bg-white/60 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="mt-1 break-all text-sm font-medium text-gray-900">{value}</p>
+    <div className="rounded-md border border-border bg-secondary/60 p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium text-foreground">{value}</p>
     </div>
+  );
+}
+
+function Prerequisite({ children }: { children: string }) {
+  return (
+    <li className="flex gap-3 text-sm text-muted-foreground">
+      <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-[var(--color-success)]" />
+      <span>{children}</span>
+    </li>
   );
 }
 
@@ -63,224 +74,237 @@ export function QuickBooksSettingsPage({ userRole }: QuickBooksSettingsPageProps
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const handledConnection = useRef<string | null>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  const refreshStatus = async () => {
+  const refreshStatus = useCallback(async () => {
+    setLoading(true);
+    setStatusError(null);
     try {
-      setLoading(true);
       setStatus(await getQuickBooksStatus());
     } catch (error) {
-      console.error("Failed to fetch QuickBooks status:", error);
-      toast.error("Could not load QuickBooks status");
+      setStatusError(error instanceof Error ? error.message : "Could not load QuickBooks status.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (userRole === "admin") {
-      refreshStatus();
-    } else if (userRole) {
-      setLoading(false);
+    if (userRole === "admin") void refreshStatus();
+    else setLoading(false);
+  }, [refreshStatus, userRole]);
+
+  useEffect(() => {
+    const connection = new URLSearchParams(location.search).get("connection");
+    if (!connection || handledConnection.current === connection) return;
+    handledConnection.current = connection;
+
+    if (connection === "success") {
+      toast.success("QuickBooks connected", {
+        description: "The encrypted company connection is ready for invoice validation.",
+      });
+      void refreshStatus();
+    } else {
+      toast.error("QuickBooks connection was not completed", {
+        description: "No connection details were changed. Check the Intuit setup and try again.",
+      });
     }
-  }, [userRole]);
+    navigate("/quickbooks", { replace: true });
+  }, [location.search, navigate, refreshStatus]);
 
   const handleConnect = async () => {
+    setConnecting(true);
     try {
-      setConnecting(true);
       const { authorization_url } = await getQuickBooksAuthorizationUrl();
-      const authWindow = window.open(authorization_url, "_blank", "noopener,noreferrer");
-
-      if (!authWindow) {
-        window.location.assign(authorization_url);
-        return;
-      }
-
-      toast.success("QuickBooks authorization opened", {
-        description: "Finish the Intuit approval, then return here and refresh the status.",
-      });
+      window.location.assign(authorization_url);
     } catch (error) {
-      console.error("Failed to start QuickBooks connection:", error);
-      toast.error("Could not start QuickBooks connection");
-    } finally {
+      toast.error("Could not start QuickBooks connection", {
+        description: error instanceof Error ? error.message : "Check the backend configuration and try again.",
+      });
       setConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
-    if (!confirm("Disconnect QuickBooks from IDC Energy Database? Existing invoice references will remain for audit history.")) {
-      return;
-    }
+    const confirmed = window.confirm(
+      "Disconnect QuickBooks? Intuit access will be revoked. Existing invoice references remain for audit history.",
+    );
+    if (!confirmed) return;
 
+    setDisconnecting(true);
     try {
-      setDisconnecting(true);
       await disconnectQuickBooks();
-      toast.success("QuickBooks disconnected");
+      toast.success("QuickBooks disconnected and access revoked");
       await refreshStatus();
     } catch (error) {
-      console.error("Failed to disconnect QuickBooks:", error);
-      toast.error("Could not disconnect QuickBooks");
+      toast.error("QuickBooks could not be disconnected", {
+        description: error instanceof Error
+          ? error.message
+          : "Remote revocation failed, so the local connection was preserved for safety.",
+      });
     } finally {
       setDisconnecting(false);
     }
   };
 
-  if (!userRole) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="text-gray-500">Loading QuickBooks settings...</div>
-      </div>
-    );
-  }
-
   if (userRole !== "admin") {
     return (
-      <div className="mx-auto flex max-w-2xl flex-col items-center justify-center rounded-2xl border border-white/50 bg-white/70 p-10 text-center shadow-sm backdrop-blur">
-        <ShieldCheck className="h-12 w-12 text-teal-600" />
-        <h1 className="mt-4 text-2xl font-bold text-gray-900">Admins only</h1>
-        <p className="mt-2 text-gray-600">
-          QuickBooks connection settings can change live accounting data, so this page is limited to admins.
-        </p>
-      </div>
+      <Alert className="mx-auto max-w-2xl">
+        <ShieldCheck aria-hidden="true" />
+        <AlertTitle>Administrator access required</AlertTitle>
+        <AlertDescription>Only administrators can change the live accounting connection.</AlertDescription>
+      </Alert>
     );
   }
 
   const connected = Boolean(status?.connected);
   const refreshDaysLeft = daysUntil(status?.refresh_expires_at);
-  const tokenWarning = connected && refreshDaysLeft !== null && refreshDaysLeft <= 14;
+  const grantExpired = connected && refreshDaysLeft !== null && refreshDaysLeft <= 0;
+  const grantWarning = connected && refreshDaysLeft !== null && refreshDaysLeft > 0 && refreshDaysLeft <= 14;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <header className="flex flex-col gap-4 border-b border-border pb-5 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-teal-600 p-3 text-white shadow-lg shadow-teal-700/20">
-              <Link2 className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">QuickBooks Connection</h1>
-              <p className="text-gray-600">
-                Connect the production QuickBooks company and manage OAuth tokens.
-              </p>
-            </div>
-          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Accounting integration</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">QuickBooks Online</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage the single production company connection used for customer invoices.</p>
         </div>
-
-        <Button
-          type="button"
-          variant="outline"
-          onClick={refreshStatus}
-          disabled={loading}
-          className="bg-white/70"
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+        <Button type="button" variant="outline" onClick={() => void refreshStatus()} disabled={loading}>
+          <RefreshCw aria-hidden="true" className={loading ? "animate-spin" : undefined} />
           Refresh status
         </Button>
-      </div>
+      </header>
 
-      <Card className="border-white/60 bg-white/75 shadow-xl shadow-gray-900/5 backdrop-blur">
-        <CardHeader className="md:flex md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-2xl text-gray-900">
-              {connected ? (
-                <CheckCircle2 className="h-6 w-6 text-teal-600" />
-              ) : (
-                <AlertCircle className="h-6 w-6 text-amber-600" />
-              )}
-              {connected ? "Connected to QuickBooks" : "Not connected yet"}
-            </CardTitle>
-            <CardDescription className="mt-2 text-base">
-              {connected
-                ? "IDC can create QuickBooks customers and invoices from approved transactions."
-                : "Add the production keys in Render, then start OAuth from this page."}
-            </CardDescription>
+      {statusError && (
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden="true" />
+          <AlertTitle>Status unavailable</AlertTitle>
+          <AlertDescription>{statusError}</AlertDescription>
+        </Alert>
+      )}
+
+      {(grantWarning || grantExpired) && (
+        <Alert variant={grantExpired ? "destructive" : "default"}>
+          <Clock3 aria-hidden="true" />
+          <AlertTitle>{grantExpired ? "QuickBooks authorization expired" : "Reconnect soon"}</AlertTitle>
+          <AlertDescription>
+            {grantExpired
+              ? "Reconnect before attempting another invoice."
+              : `The refresh grant expires in ${refreshDaysLeft} day${refreshDaysLeft === 1 ? "" : "s"}.`}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <Card className="overflow-hidden">
+        <div className="h-1 bg-gradient-to-r from-primary via-[var(--idc-red)] to-[var(--idc-amber)]" />
+        <CardHeader className="gap-4 md:flex md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-3">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+              {connected ? <Link2 aria-hidden="true" className="size-5" /> : <Unlink aria-hidden="true" className="size-5" />}
+            </div>
+            <div>
+              <CardTitle>{loading ? "Checking connection..." : connected ? "Company connected" : "Connection required"}</CardTitle>
+              <CardDescription className="mt-1 max-w-2xl">
+                {connected
+                  ? "IDC can create customer records and idempotent invoices after an administrator approves the preview."
+                  : "Connect only after the Render secrets, Intuit callback, and QuickBooks service item are configured."}
+              </CardDescription>
+            </div>
           </div>
           <Badge
-            variant={connected ? "default" : "outline"}
-            className={connected ? "mt-4 bg-teal-600 md:mt-0" : "mt-4 border-amber-300 bg-amber-50 text-amber-700 md:mt-0"}
+            variant="outline"
+            className={connected
+              ? "border-[var(--color-success)] bg-[var(--color-success-soft)] text-foreground"
+              : "border-[var(--idc-amber)] bg-[var(--color-warning-soft)] text-foreground"}
           >
-            {connected ? "Live connection" : "Setup required"}
+            {loading && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+            {!loading && connected && <CheckCircle2 aria-hidden="true" />}
+            {!loading && !connected && <AlertCircle aria-hidden="true" />}
+            {loading ? "Checking" : connected ? "Connected" : "Not connected"}
           </Badge>
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {tokenWarning && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              The QuickBooks refresh token expires in {refreshDaysLeft} day{refreshDaysLeft === 1 ? "" : "s"}.
-              Reconnect before then to avoid invoice creation failures.
-            </div>
-          )}
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <DetailRow label="Realm ID" value={status?.realm_id || "Not connected"} />
-            <DetailRow label="Access token expires" value={formatDate(status?.token_expires_at)} />
-            <DetailRow label="Refresh token expires" value={formatDate(status?.refresh_expires_at)} />
+          <div className="grid gap-3 md:grid-cols-3">
+            <DetailRow label="Access credential" value={formatDate(status?.token_expires_at)} />
+            <DetailRow label="Refresh grant" value={formatDate(status?.refresh_expires_at)} />
+            <DetailRow label="Credential storage" value="Encrypted at rest; server-only" />
           </div>
 
-          <Separator className="bg-gray-200" />
+          <Separator />
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Button
-              type="button"
-              onClick={handleConnect}
-              disabled={connecting}
-              className="bg-teal-600 text-white hover:bg-teal-700"
-            >
-              <ExternalLink className="mr-2 h-4 w-4" />
-              {connected ? "Reconnect QuickBooks" : "Connect QuickBooks"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleDisconnect}
-              disabled={!connected || disconnecting}
-              className="border-red-200 bg-white/70 text-red-700 hover:bg-red-50"
-            >
-              <Unlink className="mr-2 h-4 w-4" />
-              Disconnect
-            </Button>
+            {!connected && (
+              <Button type="button" onClick={() => void handleConnect()} disabled={connecting}>
+                {connecting ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ExternalLink aria-hidden="true" />}
+                {connecting ? "Opening Intuit..." : "Connect QuickBooks"}
+              </Button>
+            )}
+            {connected && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleDisconnect()}
+                disabled={disconnecting}
+                className="text-destructive hover:text-destructive"
+              >
+                {disconnecting ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Unlink aria-hidden="true" />}
+                {disconnecting ? "Revoking access..." : "Disconnect and revoke"}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card className="border-white/60 bg-white/75 shadow-sm backdrop-blur">
+      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-gray-900">
-              <ServerCog className="h-5 w-5 text-teal-600" />
-              Production checklist
-            </CardTitle>
-            <CardDescription>
-              These values need to match Intuit and Render exactly.
-            </CardDescription>
+            <div className="flex items-center gap-3">
+              <ServerCog aria-hidden="true" className="size-5 text-primary" />
+              <div>
+                <CardTitle>Production prerequisites</CardTitle>
+                <CardDescription>These values must match Render, Intuit, and QuickBooks exactly.</CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <DetailRow label="Render env var" value="QB_CLIENT_ID = Intuit production client ID" />
-            <DetailRow label="Render env var" value="QB_CLIENT_SECRET = Intuit production client secret" />
-            <DetailRow label="Render env var" value="QB_ENVIRONMENT = production" />
-            <DetailRow label="Intuit redirect URI" value={REDIRECT_URI} />
+          <CardContent>
+            <ul className="space-y-3" role="list">
+              <Prerequisite>Production client ID and secret are stored only in Render.</Prerequisite>
+              <Prerequisite>QB_ENVIRONMENT is set to production.</Prerequisite>
+              <Prerequisite>QB_TOKEN_ENCRYPTION_KEY is backed up separately from the database.</Prerequisite>
+              <Prerequisite>QB_SERVICE_ITEM_NAME matches an active QuickBooks Service item.</Prerequisite>
+              <Prerequisite>The service item has the intended income account and tax settings.</Prerequisite>
+              <Prerequisite>The v1 invoice workflow is limited to USD transactions.</Prerequisite>
+            </ul>
+            <div className="mt-5 rounded-md border border-border bg-secondary/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Registered Intuit redirect URI</p>
+              <code className="mt-1 block break-all text-sm text-foreground">{REDIRECT_URI}</code>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="border-teal-100 bg-gradient-to-br from-teal-50 to-white shadow-sm">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-gray-900">
-              <Clock3 className="h-5 w-5 text-teal-600" />
-              How this works
-            </CardTitle>
+            <div className="flex items-center gap-3">
+              <KeyRound aria-hidden="true" className="size-5 text-primary" />
+              <div>
+                <CardTitle>Safety model</CardTitle>
+                <CardDescription>What v1 does before touching live accounting data.</CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-4 text-sm text-gray-700">
-            <p>
-              Connect opens Intuit OAuth in a new tab. Once you approve access, the backend stores the
-              QuickBooks realm ID plus access and refresh tokens.
-            </p>
-            <p>
-              Invoice creation uses the stored token server-side only. Production keys never go into
-              the browser or Vercel.
-            </p>
-            <p>
-              Disconnect deletes the stored OAuth tokens. Existing transaction invoice numbers stay in
-              the database for reconciliation.
-            </p>
+          <CardContent className="space-y-4 text-sm leading-6 text-muted-foreground">
+            <p>OAuth state is signed, persisted, and single-use. The browser never receives company or credential values.</p>
+            <p>Each invoice is previewed first and stored with a stable Intuit request ID, preventing duplicate creation during retries.</p>
+            <p>Disconnect revokes the Intuit grant before local credentials are removed. Invoice references remain for reconciliation.</p>
+            <Alert>
+              <ShieldCheck aria-hidden="true" />
+              <AlertTitle>v1 boundary</AlertTitle>
+              <AlertDescription>One company, one configured service item, no attachments, and sandbox validation before live invoicing.</AlertDescription>
+            </Alert>
           </CardContent>
         </Card>
       </div>

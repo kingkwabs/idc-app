@@ -1,11 +1,27 @@
-from flask import Blueprint, request, jsonify
-from sqlalchemy import select, desc, delete, func, case, or_
-from sqlalchemy.exc import NoResultFound
+from flask import Blueprint, g, request, jsonify
+from sqlalchemy import select, delete, func, case
 from database import db_session
-from models import Transaction, Document, ShipmentInfo, ActivityLog, TransactionSupplierLink
+from models import (
+	ActivityLog,
+	AssociatedCost,
+	Client,
+	Document,
+	QuickBooksInvoiceAttempt,
+	ShipmentInfo,
+	SupplierQuote,
+	Transaction,
+	TransactionSupplierLink,
+)
 from schemas import TransactionCreate, TransactionOut, TransactionUpdate
+from auth_util import require_admin
+from workflow import TERMINAL_TRANSACTION_STATUSES
 
 bp = Blueprint('transactions', __name__, url_prefix='/api/transactions')
+MAX_PAGE_SIZE = 100
+
+
+def _transaction_payload(transaction: Transaction) -> dict:
+	return TransactionOut.model_validate(transaction).model_dump(mode="json")
 
 
 @bp.post('')
@@ -13,6 +29,8 @@ def create_transaction():
 	payload = request.get_json() or {}
 	data = TransactionCreate(**payload)
 	with db_session() as session:
+		if session.get(Client, data.client_id) is None:
+			return jsonify({"error": "client_not_found"}), 404
 		trx = Transaction(
 			client_id=data.client_id,
 			rfq_number=data.rfq_number,
@@ -23,29 +41,65 @@ def create_transaction():
 		)
 		session.add(trx)
 		session.flush()  # assign id
-		return jsonify(TransactionOut.model_validate(trx).model_dump()), 201
+		return jsonify(_transaction_payload(trx)), 201
 
 
 @bp.get('')
 def list_transactions():
-	page = int(request.args.get('page', 1))
-	size = int(request.args.get('size', 20))
+	try:
+		page = int(request.args.get('page', 1))
+		size = int(request.args.get('size', 20))
+	except (TypeError, ValueError):
+		return jsonify({"error": "page_and_size_must_be_integers"}), 400
+	if page < 1 or size < 1 or size > MAX_PAGE_SIZE:
+		return jsonify({"error": f"page must be positive and size must be between 1 and {MAX_PAGE_SIZE}"}), 400
+
+	client_term = request.args.get("client", "").strip().lower()
+	status_term = request.args.get("status", "").strip().lower()
+	sort_key = request.args.get("sort", "date").strip().lower()
+	direction = request.args.get("direction", "desc").strip().lower()
+	if sort_key not in {"date", "amount", "client"} or direction not in {"asc", "desc"}:
+		return jsonify({"error": "invalid_transaction_sort"}), 400
+
 	offset = (page - 1) * size
 	with db_session() as session:
-		stmt = select(Transaction).order_by(desc(Transaction.id)).offset(offset).limit(size)
+		filters = []
+		if client_term:
+			filters.append(func.lower(Client.name).contains(client_term))
+		if status_term:
+			filters.append(func.lower(func.coalesce(Transaction.status, "")).contains(status_term))
+
+		amount = func.coalesce(Transaction.client_po_amount, Transaction.client_quote_amount, 0)
+		sort_column = {
+			"date": Transaction.date_received,
+			"amount": amount,
+			"client": func.lower(Client.name),
+		}[sort_key]
+		ordered = sort_column.asc().nullslast() if direction == "asc" else sort_column.desc().nullslast()
+
+		stmt = (
+			select(Transaction)
+			.join(Client, Transaction.client_id == Client.id)
+			.where(*filters)
+			.order_by(ordered, Transaction.id.asc() if direction == "asc" else Transaction.id.desc())
+			.offset(offset)
+			.limit(size)
+		)
+		total_stmt = (
+			select(func.count(Transaction.id))
+			.join(Client, Transaction.client_id == Client.id)
+			.where(*filters)
+		)
 		items = session.execute(stmt).scalars().all()
-		data = [TransactionOut.model_validate(i).model_dump() for i in items]
-		return jsonify({"items": data, "page": page, "size": size})
+		total = session.scalar(total_stmt) or 0
+		data = [_transaction_payload(item) for item in items]
+		return jsonify({"items": data, "page": page, "size": size, "total": int(total)})
 
 
 @bp.get('/summary')
 def get_transactions_summary():
 	status_text = func.coalesce(func.lower(Transaction.status), "")
-	inactive_status = or_(
-		status_text.like("%deliver%"),
-		status_text.like("%cancel%"),
-		status_text == "loans-cleared",
-	)
+	inactive_status = status_text.in_(TERMINAL_TRANSACTION_STATUSES)
 	revenue_amount = func.coalesce(Transaction.client_po_amount, Transaction.client_quote_amount, 0)
 	with db_session() as session:
 		stmt = select(
@@ -65,7 +119,7 @@ def get_transaction(trx_id: int):
 		obj = session.get(Transaction, trx_id)
 		if obj is None:
 			return jsonify({"error": "Not found"}), 404
-		return jsonify(TransactionOut.model_validate(obj).model_dump())
+		return jsonify(_transaction_payload(obj))
 
 
 @bp.patch('/<int:trx_id>')
@@ -76,33 +130,60 @@ def update_transaction(trx_id: int):
 		obj = session.get(Transaction, trx_id)
 		if obj is None:
 			return jsonify({"error": "Not found"}), 404
-		if data.item_description is not None:
-			obj.item_description = data.item_description
-		if data.status is not None:
-			obj.status = data.status
-		if data.client_quote_amount is not None:
-			obj.client_quote_amount = data.client_quote_amount
-		if data.client_quote_currency is not None:
-			obj.client_quote_currency = data.client_quote_currency
-		if data.client_po_amount is not None:
-			obj.client_po_amount = data.client_po_amount
-		if data.supplier_po_amount is not None:
-			obj.supplier_po_amount = data.supplier_po_amount
-		session.add(obj)
-		return jsonify(TransactionOut.model_validate(obj).model_dump())
+		old_status = obj.status
+		updates = data.model_dump(exclude_unset=True, exclude={"status_reason"})
+		for field, value in updates.items():
+			setattr(obj, field, value)
+		if "status" in updates and updates["status"] != old_status:
+			current_user = getattr(g, "current_user", {}) or {}
+			reason = (data.status_reason or "Workflow advanced through the application.").strip()
+			details = f"{old_status or 'unset'} -> {updates['status']}; {reason}"
+			if current_user.get("name"):
+				details += f"; by {current_user['name']}"
+			session.add(ActivityLog(
+				transaction_id=trx_id,
+				action="status-updated",
+				details=details,
+			))
+		return jsonify(_transaction_payload(obj))
 
 
 @bp.delete('/<int:trx_id>')
-def delete_transaction(trx_id: int):
+@require_admin
+def delete_transaction(current_user, trx_id: int):
 	with db_session() as session:
-		obj = session.get(Transaction, trx_id)
+		obj = session.execute(
+			select(Transaction).where(Transaction.id == trx_id).with_for_update()
+		).scalar_one_or_none()
 		if obj is None:
 			return jsonify({"error": "Not found"}), 404
+		invoice_attempt = session.execute(
+			select(QuickBooksInvoiceAttempt)
+			.where(QuickBooksInvoiceAttempt.transaction_id == trx_id)
+			.with_for_update()
+		).scalar_one_or_none()
+		protected_attempt = invoice_attempt is not None and (
+			invoice_attempt.invoice_id is not None
+			or invoice_attempt.status in {"pending", "succeeded", "unknown"}
+		)
+		if (
+			obj.quickbooks_invoice_id
+			or obj.invoiced_at
+			or obj.quickbooks_invoice_status in {"pending", "succeeded", "unknown"}
+			or protected_attempt
+		):
+			return jsonify({
+				"error": "transaction_has_quickbooks_invoice_history",
+				"details": "Transactions with pending or recorded QuickBooks invoice history must be retained for reconciliation and audit. Cancel the workflow instead.",
+			}), 409
 		# Delete related rows first
 		session.execute(delete(Document).where(Document.transaction_id == trx_id))
 		session.execute(delete(ShipmentInfo).where(ShipmentInfo.transaction_id == trx_id))
 		session.execute(delete(ActivityLog).where(ActivityLog.transaction_id == trx_id))
 		session.execute(delete(TransactionSupplierLink).where(TransactionSupplierLink.transaction_id == trx_id))
+		session.execute(delete(SupplierQuote).where(SupplierQuote.transaction_id == trx_id))
+		session.execute(delete(AssociatedCost).where(AssociatedCost.transaction_id == trx_id))
+		session.execute(delete(QuickBooksInvoiceAttempt).where(QuickBooksInvoiceAttempt.transaction_id == trx_id))
 		# Then delete transaction
 		session.delete(obj)
 		return ('', 204)

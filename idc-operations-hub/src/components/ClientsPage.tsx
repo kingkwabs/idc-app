@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { Button } from "./ui/button";
+import { toast } from "sonner";
+
+import {
+  createClient,
+  fetchClientMetrics,
+  type ClientCreate,
+  type ClientMetricOut,
+} from "../lib/api";
 import { ClientKPICards } from "./ClientKPICards";
 import { ClientsTable } from "./ClientsTable";
 import { CreateClientModal } from "./CreateClientModal";
-import { fetchClientMetrics, type ClientMetricOut } from "../lib/api";
+import { Button } from "./ui/button";
 
-interface ClientFormData {
-  companyName: string;
-  contactName: string;
-  email: string;
-  phone: string;
-  address: string;
-  notes: string;
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Failed to load clients";
 }
 
 export function ClientsPage() {
@@ -23,48 +25,57 @@ export function ClientsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetchClientMetrics();
-        if (!cancelled) setClients(res.items);
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || "Failed to load clients");
-      } finally {
+
+    void fetchClientMetrics()
+      .then((response) => {
+        if (!cancelled) setClients(response.items);
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) setError(errorMessage(loadError));
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const handleCreateClient = (data: ClientFormData) => {
-    console.log("Creating client:", data);
-    // Here you would typically send the data to your backend
-    // For now, we'll just log it and close the modal
+  const handleCreateClient = async (payload: ClientCreate) => {
+    const created = await createClient(payload);
+    setClients((current) =>
+      [
+        ...current,
+        {
+          id: created.id,
+          name: created.name,
+          active_transactions: 0,
+          completed_transactions: 0,
+          total_revenue: 0,
+        },
+      ].sort((left, right) => left.name.localeCompare(right.name)),
+    );
+    toast.success(`${created.name} was added`);
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header Section */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">Clients</h1>
-        <Button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-teal-600/90 hover:bg-teal-700 text-white backdrop-blur-sm border border-teal-500/30 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add New Client
+    <div className="mx-auto w-full max-w-[96rem] space-y-6">
+      <header className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Relationships</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Clients</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage customer records and review their transaction history.</p>
+        </div>
+        <Button type="button" onClick={() => setIsModalOpen(true)}>
+          <Plus aria-hidden="true" />
+          Add client
         </Button>
-      </div>
+      </header>
 
-      {/* KPI Cards Section */}
       <ClientKPICards clients={clients} loading={loading} />
-
-      {/* Clients Table Section */}
       <ClientsTable clients={clients} loading={loading} error={error} />
 
-      {/* Create Client Modal */}
       <CreateClientModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

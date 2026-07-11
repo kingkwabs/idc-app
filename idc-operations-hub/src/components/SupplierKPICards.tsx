@@ -1,8 +1,14 @@
-import { Truck, DollarSign, Activity } from "lucide-react";
+import { Activity, CircleDollarSign, Truck } from "lucide-react";
 import { useMemo } from "react";
-import type { SupplierSummary } from "../lib/api";
 
-const currencyFormatter = new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' });
+import type { SupplierSummary } from "../lib/api";
+import { Skeleton } from "./ui/skeleton";
+
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
 
 interface SupplierKPICardsProps {
   summary: SupplierSummary | null;
@@ -10,40 +16,41 @@ interface SupplierKPICardsProps {
 }
 
 export function SupplierKPICards({ summary, loading }: SupplierKPICardsProps) {
-  const kpiData = useMemo(() => ([
-    { title: "Total Suppliers", value: loading ? "—" : String(summary?.total_suppliers ?? 0), icon: Truck, description: "Registered supplier partners" },
-    { title: "Total Spend (All Time)", value: loading ? "—" : currencyFormatter.format(summary?.total_spend ?? 0), icon: DollarSign, description: "Cumulative supplier payments" },
-    { title: "Suppliers on Active Projects", value: loading ? "—" : String(summary?.engaged_suppliers ?? 0), icon: Activity, description: "Currently engaged suppliers" },
-  ]), [loading, summary]);
+  const metrics = useMemo(
+    () => [
+      { label: "Supplier records", value: String(summary?.total_suppliers ?? 0), icon: Truck, context: "Registered vendors" },
+      { label: "Supplier PO value", value: currencyFormatter.format(summary?.total_spend ?? 0), icon: CircleDollarSign, context: "Across all supplier orders" },
+      { label: "Engaged suppliers", value: String(summary?.engaged_suppliers ?? 0), icon: Activity, context: "Linked to active work" },
+    ],
+    [summary],
+  );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-      {kpiData.map((kpi, index) => {
-        const Icon = kpi.icon;
-        return (
-          <div
-            key={index}
-            className="glass-card rounded-lg p-6 transition-all duration-200 hover:shadow-lg"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 bg-teal-50 rounded-lg">
-                <Icon className="h-6 w-6 text-teal-600" />
+    <section aria-label="Supplier summary" aria-busy={loading} className="overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)]">
+      <p className="sr-only" aria-live="polite">{loading ? "Loading supplier summary" : "Supplier summary loaded"}</p>
+      <dl className="grid divide-y md:grid-cols-3 md:divide-x md:divide-y-0">
+        {metrics.map((metric) => {
+          const Icon = metric.icon;
+          return (
+            <div key={metric.label} className="min-w-0 p-5 sm:p-6">
+              <div className="flex items-center gap-2.5 text-muted-foreground">
+                <span className="flex size-7 items-center justify-center rounded-md bg-accent text-accent-foreground">
+                  <Icon aria-hidden="true" className="size-4" />
+                </span>
+                <dt className="text-xs font-semibold uppercase tracking-[0.12em]">{metric.label}</dt>
               </div>
+              {loading ? (
+                <Skeleton className="mt-4 h-7 w-24" />
+              ) : (
+                <dd className="mt-3 break-words text-xl font-semibold tracking-tight text-foreground" data-numeric="true">
+                  {metric.value}
+                </dd>
+              )}
+              <p className="mt-1.5 text-sm text-muted-foreground">{metric.context}</p>
             </div>
-            <div>
-              <h3 className="text-2xl font-semibold text-gray-900 mb-1">
-                {kpi.value}
-              </h3>
-              <p className="text-sm font-medium text-gray-600 mb-1">
-                {kpi.title}
-              </p>
-              <p className="text-xs text-gray-500">
-                {kpi.description}
-              </p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </dl>
+    </section>
   );
 }

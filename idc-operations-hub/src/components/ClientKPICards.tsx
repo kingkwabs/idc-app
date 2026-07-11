@@ -1,8 +1,14 @@
-import { DollarSign, Users, Activity } from "lucide-react";
+import { Activity, CircleDollarSign, Users } from "lucide-react";
 import { useMemo } from "react";
-import type { ClientMetricOut } from "../lib/api";
 
-const currencyFormatter = new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' });
+import type { ClientMetricOut } from "../lib/api";
+import { Skeleton } from "./ui/skeleton";
+
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
 
 interface ClientKPICardsProps {
   clients: ClientMetricOut[];
@@ -13,47 +19,50 @@ export function ClientKPICards({ clients, loading }: ClientKPICardsProps) {
   const totals = useMemo(() => {
     let totalRevenue = 0;
     let activeTransactions = 0;
+
     for (const client of clients) {
       totalRevenue += client.total_revenue;
       activeTransactions += client.active_transactions;
     }
+
     return { totalClients: clients.length, totalRevenue, activeTransactions };
   }, [clients]);
 
-  const kpiData = useMemo(() => ([
-    { title: "Total Clients", value: loading ? "—" : String(totals.totalClients), icon: Users, description: "Active client accounts" },
-    { title: "Total Revenue (All Time)", value: loading ? "—" : currencyFormatter.format(totals.totalRevenue), icon: DollarSign, description: "Cumulative client revenue" },
-    { title: "Currently Active Transactions", value: loading ? "—" : String(totals.activeTransactions), icon: Activity, description: "In-progress client projects" },
-  ]), [loading, totals]);
+  const metrics = useMemo(
+    () => [
+      { label: "Client records", value: String(totals.totalClients), icon: Users, context: "Registered accounts" },
+      { label: "Recorded client value", value: currencyFormatter.format(totals.totalRevenue), icon: CircleDollarSign, context: "Quoted or ordered across transactions" },
+      { label: "Active transactions", value: String(totals.activeTransactions), icon: Activity, context: "Currently in progress" },
+    ],
+    [totals],
+  );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-      {kpiData.map((kpi, index) => {
-        const Icon = kpi.icon;
-        return (
-          <div
-            key={index}
-            className="glass-card rounded-lg p-6 transition-all duration-200 hover:shadow-lg"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 bg-teal-50 rounded-lg">
-                <Icon className="h-6 w-6 text-teal-600" />
+    <section aria-label="Client summary" aria-busy={loading} className="overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)]">
+      <p className="sr-only" aria-live="polite">{loading ? "Loading client summary" : "Client summary loaded"}</p>
+      <dl className="grid divide-y md:grid-cols-3 md:divide-x md:divide-y-0">
+        {metrics.map((metric) => {
+          const Icon = metric.icon;
+          return (
+            <div key={metric.label} className="min-w-0 p-5 sm:p-6">
+              <div className="flex items-center gap-2.5 text-muted-foreground">
+                <span className="flex size-7 items-center justify-center rounded-md bg-accent text-accent-foreground">
+                  <Icon aria-hidden="true" className="size-4" />
+                </span>
+                <dt className="text-xs font-semibold uppercase tracking-[0.12em]">{metric.label}</dt>
               </div>
+              {loading ? (
+                <Skeleton className="mt-4 h-7 w-24" />
+              ) : (
+                <dd className="mt-3 break-words text-xl font-semibold tracking-tight text-foreground" data-numeric="true">
+                  {metric.value}
+                </dd>
+              )}
+              <p className="mt-1.5 text-sm text-muted-foreground">{metric.context}</p>
             </div>
-            <div>
-              <h3 className="text-2xl font-semibold text-gray-900 mb-1">
-                {kpi.value}
-              </h3>
-              <p className="text-sm font-medium text-gray-600 mb-1">
-                {kpi.title}
-              </p>
-              <p className="text-xs text-gray-500">
-                {kpi.description}
-              </p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </dl>
+    </section>
   );
 }

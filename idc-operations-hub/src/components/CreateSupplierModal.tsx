@@ -1,10 +1,9 @@
-import { useState } from "react";
-import { Building2, Mail, Phone, MapPin, Tag, Globe } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { Factory, LoaderCircle } from "lucide-react";
+
+import { ApiError, type SupplierCreate } from "../lib/api";
+import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Textarea } from "./ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import {
   Dialog,
   DialogContent,
@@ -12,268 +11,222 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
-import { toast } from "sonner";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Textarea } from "./ui/textarea";
 
 interface CreateSupplierModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: SupplierFormData) => void;
-}
-
-interface SupplierFormData {
-  companyName: string;
-  contactName: string;
-  email: string;
-  phone: string;
-  website: string;
-  address: string;
-  category: string;
-  rfq: string;
-  notes: string;
+  onSubmit: (data: SupplierCreate) => Promise<void>;
 }
 
 const supplierCategories = [
-  "OEM Parts Specialist",
-  "Raw Materials Provider",
-  "Custom Manufacturing",
-  "Control Systems Supplier",
-  "Transportation Services",
-  "Specialty Alloys",
-  "Electrical Components",
-  "Safety Equipment",
-  "Maintenance Services",
-  "Other"
+  "OEM parts",
+  "Raw materials",
+  "Custom manufacturing",
+  "Control systems",
+  "Transportation",
+  "Electrical components",
+  "Safety equipment",
+  "Maintenance services",
+  "Other",
 ];
 
+const emptySupplier: SupplierCreate = {
+  name: "",
+  contact_name: "",
+  email: "",
+  phone: "",
+  website: "",
+  address: "",
+  category: "",
+  notes: "",
+};
+
+function optional(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
 export function CreateSupplierModal({ isOpen, onClose, onSubmit }: CreateSupplierModalProps) {
-  const [formData, setFormData] = useState<SupplierFormData>({
-    companyName: "",
-    contactName: "",
-    email: "",
-    phone: "",
-    website: "",
-    address: "",
-    category: "",
-    rfq: "",
-    notes: ""
-  });
+  const [formData, setFormData] = useState<SupplierCreate>(emptySupplier);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof SupplierCreate, string>>>({});
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [errors, setErrors] = useState<Partial<SupplierFormData>>({});
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Simple validation
-    const newErrors: Partial<SupplierFormData> = {};
-    if (!formData.companyName.trim()) newErrors.companyName = "Company name is required";
-    if (!formData.contactName.trim()) newErrors.contactName = "Contact name is required";
-    if (!formData.email.trim()) newErrors.email = "Email is required";
-    if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = "Please enter a valid email address";
-    }
-    if (!formData.category) newErrors.category = "Please select a category";
-
-    setErrors(newErrors);
-
-    if (Object.keys(newErrors).length === 0) {
-      onSubmit(formData);
-      toast.success("Supplier created successfully!");
-      setFormData({
-        companyName: "",
-        contactName: "",
-        email: "",
-        phone: "",
-        website: "",
-        address: "",
-        category: "",
-        rfq: "",
-        notes: ""
-      });
-      onClose();
-    }
+  const updateField = (field: keyof SupplierCreate, value: string) => {
+    setFormData((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => ({ ...current, [field]: undefined }));
+    setSubmissionError(null);
   };
 
-  const handleInputChange = (field: keyof SupplierFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: undefined }));
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const errors: Partial<Record<keyof SupplierCreate, string>> = {};
+    const name = formData.name.trim().replace(/\s+/g, " ");
+    const email = formData.email?.trim() || "";
+
+    if (name.length < 2) errors.name = "Enter a company name with at least 2 characters.";
+    if (email && !/^\S+@\S+\.\S+$/.test(email)) errors.email = "Enter a valid email address.";
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    setIsSubmitting(true);
+    setSubmissionError(null);
+    try {
+      await onSubmit({
+        name,
+        contact_name: optional(formData.contact_name),
+        email: optional(formData.email),
+        phone: optional(formData.phone),
+        website: optional(formData.website),
+        address: optional(formData.address),
+        category: optional(formData.category),
+        notes: optional(formData.notes),
+      });
+      setFormData(emptySupplier);
+      onClose();
+    } catch (error) {
+      setSubmissionError(
+        error instanceof ApiError ? error.message : "The supplier could not be created. Please try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="glass-card max-w-md max-h-[90vh] overflow-y-auto">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && !isSubmitting && onClose()}>
+      <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold text-gray-900">
-            Add New Supplier
-          </DialogTitle>
-          <DialogDescription className="mt-1 text-sm text-gray-600">
-            Register a new supplier with contact information and business category.
-          </DialogDescription>
+          <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+            <Factory aria-hidden="true" className="size-5" />
+          </div>
+          <DialogTitle>Add supplier</DialogTitle>
+          <DialogDescription>Register a vendor for RFQs, quotes, and transaction sourcing.</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Company Name */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {submissionError && (
+            <Alert variant="destructive">
+              <AlertDescription>{submissionError}</AlertDescription>
+            </Alert>
+          )}
+
           <div className="space-y-2">
-            <Label htmlFor="companyName" className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-gray-500" />
-              Company Name *
-            </Label>
+            <Label htmlFor="supplier-name">Company name</Label>
             <Input
-              id="companyName"
-              value={formData.companyName}
-              onChange={(e) => handleInputChange("companyName", e.target.value)}
-              placeholder="Enter supplier company name"
-              className={errors.companyName ? "border-red-500" : ""}
+              id="supplier-name"
+              autoFocus
+              required
+              minLength={2}
+              maxLength={160}
+              value={formData.name}
+              onChange={(event) => updateField("name", event.target.value)}
+              aria-invalid={fieldErrors.name ? true : undefined}
+              aria-describedby={fieldErrors.name ? "supplier-name-error" : undefined}
+              placeholder="Vendor organization"
             />
-            {errors.companyName && (
-              <p className="text-sm text-red-600">{errors.companyName}</p>
-            )}
+            {fieldErrors.name && <p id="supplier-name-error" className="text-sm text-destructive">{fieldErrors.name}</p>}
           </div>
 
-          {/* Contact Name */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="supplier-contact">Primary contact</Label>
+              <Input
+                id="supplier-contact"
+                autoComplete="name"
+                maxLength={160}
+                value={formData.contact_name || ""}
+                onChange={(event) => updateField("contact_name", event.target.value)}
+                placeholder="Contact name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="supplier-category">Category</Label>
+              <Select value={formData.category || ""} onValueChange={(value) => updateField("category", value)}>
+                <SelectTrigger id="supplier-category"><SelectValue placeholder="Select category" /></SelectTrigger>
+                <SelectContent>
+                  {supplierCategories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="supplier-email">Email</Label>
+              <Input
+                id="supplier-email"
+                type="email"
+                autoComplete="email"
+                value={formData.email || ""}
+                onChange={(event) => updateField("email", event.target.value)}
+                aria-invalid={fieldErrors.email ? true : undefined}
+                aria-describedby={fieldErrors.email ? "supplier-email-error" : undefined}
+                placeholder="contact@supplier.com"
+              />
+              {fieldErrors.email && <p id="supplier-email-error" className="text-sm text-destructive">{fieldErrors.email}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="supplier-phone">Phone</Label>
+              <Input
+                id="supplier-phone"
+                type="tel"
+                autoComplete="tel"
+                maxLength={40}
+                value={formData.phone || ""}
+                onChange={(event) => updateField("phone", event.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="contactName">Primary Contact Name *</Label>
+            <Label htmlFor="supplier-website">Website</Label>
             <Input
-              id="contactName"
-              value={formData.contactName}
-              onChange={(e) => handleInputChange("contactName", e.target.value)}
-              placeholder="Enter primary contact name"
-              className={errors.contactName ? "border-red-500" : ""}
-            />
-            {errors.contactName && (
-              <p className="text-sm text-red-600">{errors.contactName}</p>
-            )}
-          </div>
-
-          {/* Email */}
-          <div className="space-y-2">
-            <Label htmlFor="email" className="flex items-center gap-2">
-              <Mail className="w-4 h-4 text-gray-500" />
-              Email Address *
-            </Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => handleInputChange("email", e.target.value)}
-              placeholder="Enter email address"
-              className={errors.email ? "border-red-500" : ""}
-            />
-            {errors.email && (
-              <p className="text-sm text-red-600">{errors.email}</p>
-            )}
-          </div>
-
-          {/* Phone */}
-          <div className="space-y-2">
-            <Label htmlFor="phone" className="flex items-center gap-2">
-              <Phone className="w-4 h-4 text-gray-500" />
-              Phone Number
-            </Label>
-            <Input
-              id="phone"
-              value={formData.phone}
-              onChange={(e) => handleInputChange("phone", e.target.value)}
-              placeholder="Enter phone number"
+              id="supplier-website"
+              type="url"
+              inputMode="url"
+              maxLength={500}
+              value={formData.website || ""}
+              onChange={(event) => updateField("website", event.target.value)}
+              placeholder="https://supplier.com"
             />
           </div>
 
-          {/* Website */}
           <div className="space-y-2">
-            <Label htmlFor="website" className="flex items-center gap-2">
-              <Globe className="w-4 h-4 text-gray-500" />
-              Website
-            </Label>
-            <Input
-              id="website"
-              value={formData.website}
-              onChange={(e) => handleInputChange("website", e.target.value)}
-              placeholder="Enter website URL"
-            />
-          </div>
-
-          {/* Category */}
-          <div className="space-y-2">
-            <Label htmlFor="category" className="flex items-center gap-2">
-              <Tag className="w-4 h-4 text-gray-500" />
-              Category *
-            </Label>
-            <Select onValueChange={(value) => handleInputChange("category", value)}>
-              <SelectTrigger className={errors.category ? "border-red-500" : ""}>
-                <SelectValue placeholder="Select supplier category" />
-              </SelectTrigger>
-              <SelectContent className="glass-card">
-                {supplierCategories.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.category && (
-              <p className="text-sm text-red-600">{errors.category}</p>
-            )}
-          </div>
-
-          {/* Address */}
-          <div className="space-y-2">
-            <Label htmlFor="address" className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-gray-500" />
-              Address
-            </Label>
+            <Label htmlFor="supplier-address">Address</Label>
             <Textarea
-              id="address"
-              value={formData.address}
-              onChange={(e) => handleInputChange("address", e.target.value)}
-              placeholder="Enter company address"
+              id="supplier-address"
+              maxLength={1000}
               rows={2}
+              value={formData.address || ""}
+              onChange={(event) => updateField("address", event.target.value)}
+              placeholder="Office or shipping address"
             />
           </div>
 
-          {/* RFQ */}
           <div className="space-y-2">
-            <Label htmlFor="rfq" className="flex items-center gap-2">
-              <Tag className="w-4 h-4 text-gray-500" />
-              RFQ Details
-            </Label>
+            <Label htmlFor="supplier-notes">Internal notes</Label>
             <Textarea
-              id="rfq"
-              value={formData.rfq}
-              onChange={(e) => handleInputChange("rfq", e.target.value)}
-              placeholder="Details about the RFQ"
-              rows={2}
+              id="supplier-notes"
+              maxLength={5000}
+              rows={3}
+              value={formData.notes || ""}
+              onChange={(event) => updateField("notes", event.target.value)}
+              placeholder="Capabilities, terms, or useful context"
             />
           </div>
 
-          {/* Notes */}
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notes</Label>
-            <Textarea
-              id="notes"
-              value={formData.notes}
-              onChange={(e) => handleInputChange("notes", e.target.value)}
-              placeholder="Additional notes about the supplier"
-              rows={2}
-            />
-          </div>
-
-          {/* Submit Buttons */}
-          <div className="flex gap-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="flex-1 text-white bg-teal-600 hover:bg-teal-700"
-            >
-              Create Supplier
+          <div className="flex flex-col-reverse gap-2 border-t border-border pt-5 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+              {isSubmitting ? "Creating..." : "Create supplier"}
             </Button>
           </div>
         </form>

@@ -81,14 +81,14 @@ export function getWorkflowStatusDescription(status?: string | null): string {
 
 export function getWorkflowStatusBadgeClass(status?: string | null): string {
   const canonicalStatus = getCanonicalWorkflowStatus(status);
-  if (canonicalStatus === "cancelled") return "bg-red-500/90 text-white hover:bg-red-600 border border-red-400/30";
-  if (canonicalStatus === "on-hold") return "bg-amber-500/90 text-gray-900 hover:bg-amber-600 border border-amber-400/30";
-  if (canonicalStatus === "loans-cleared") return "bg-green-500/90 text-white hover:bg-green-600 border border-green-400/30";
+  if (canonicalStatus === "cancelled") return "border-destructive/30 bg-[var(--color-destructive-soft)] text-destructive";
+  if (canonicalStatus === "on-hold") return "border-[var(--idc-amber)] bg-[var(--color-warning-soft)] text-[var(--color-warning-foreground)]";
+  if (canonicalStatus === "loans-cleared") return "border-[var(--color-success)] bg-[var(--color-success-soft)] text-foreground";
   if (canonicalStatus === "payment-received" || canonicalStatus === "delivery-docs-submitted") {
-    return "bg-emerald-500/90 text-white hover:bg-emerald-600 border border-emerald-400/30";
+    return "border-[var(--color-success)] bg-[var(--color-success-soft)] text-foreground";
   }
   if (canonicalStatus === "shipment-clearance-delivery" || canonicalStatus === "leadtime-shipping-arrangement") {
-    return "bg-sky-500/90 text-white hover:bg-sky-600 border border-sky-400/30";
+    return "border-[var(--color-info)] bg-[var(--color-info-soft)] text-foreground";
   }
-  return "bg-teal-600/90 text-white hover:bg-teal-700 border border-teal-500/30";
+  return "border-[var(--color-accent-border)] bg-accent text-accent-foreground";
 }

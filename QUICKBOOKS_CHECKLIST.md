@@ -1,192 +1,83 @@
-# QuickBooks Integration Setup Checklist
+# QuickBooks v1 Readiness Checklist
 
-Use this checklist to complete your QuickBooks integration setup.
+## Intuit app
 
-## ☐ 1. Create QuickBooks Developer App
+- [ ] Accounting scope is enabled.
+- [ ] Sandbox and production credentials are not mixed.
+- [ ] `QB_REDIRECT_URI` exactly matches an Intuit-registered callback.
+- [ ] Production callback uses HTTPS.
 
-- [ ] Go to https://developer.intuit.com/
-- [ ] Sign in with Intuit account
-- [ ] Click "Create an app" → "QuickBooks Online and Payments"
-- [ ] Name: "IDC Energy Database"
-- [ ] Note your **Client ID**: ___________________________
-- [ ] Note your **Client Secret**: ___________________________
-- [ ] Add Redirect URI: `https://idc-app.onrender.com/quickbooks/callback`
-- [ ] Add Privacy Policy URL: `https://your-frontend.vercel.app/privacy-policy`
-- [ ] Add EULA URL: `https://your-frontend.vercel.app/eula`
-- [ ] Save settings
+## Secrets and configuration
 
-## ☐ 2. Configure Environment Variables
+- [ ] `QB_CLIENT_ID` and `QB_CLIENT_SECRET` are stored as secrets.
+- [ ] `QB_ENVIRONMENT` is correct for the target company.
+- [ ] `QB_TOKEN_ENCRYPTION_KEY` is a valid Fernet key.
+- [ ] The Fernet key has a secure recovery copy separate from the database.
+- [ ] `QB_SERVICE_ITEM_NAME` exactly matches an active existing `Service` item.
+- [ ] The service item's income account and tax treatment are correct for IDC invoices.
+- [ ] `FRONTEND_URL` points to the deployed frontend.
+- [ ] `JWT_SECRET` is configured and protected.
+- [ ] No credential or realm value is printed in deployment logs.
 
-### On Render (Production):
-- [ ] Go to Render dashboard → your backend service
-- [ ] Navigate to "Environment" tab
-- [ ] Add `QB_CLIENT_ID` = (your client ID)
-- [ ] Add `QB_CLIENT_SECRET` = (your client secret)
-- [ ] Add `QB_REDIRECT_URI` = `https://idc-app.onrender.com/quickbooks/callback`
-- [ ] Add `QB_ENVIRONMENT` = `production`
-- [ ] Click "Save Changes" (triggers redeploy)
-- [ ] Wait for deployment to complete
+## Database
 
-### Locally (Optional - for testing):
-- [ ] Edit `/idc-backend/.env`
-- [ ] Add QuickBooks variables (see `.env.quickbooks.template`)
-- [ ] Use `QB_ENVIRONMENT=sandbox` for testing
-- [ ] Use `QB_REDIRECT_URI=http://localhost:5001/quickbooks/callback`
+- [ ] The normal schema upgrade completed successfully.
+- [ ] `quickbooks_tokens` enforces one singleton row and no duplicate legacy token rows exist.
+- [ ] `quickbooks_oauth_states` exists with nonce hash, employee, expiry, and used time.
+- [ ] `quickbooks_customer_mappings` has the client and realm-fingerprint uniqueness constraint.
+- [ ] `quickbooks_invoice_attempts` has unique transaction and request ID constraints.
+- [ ] Transaction invoice status, realm fingerprint, and last-synced columns exist.
+- [ ] Database and encryption-key recovery have been tested together.
+- [ ] Legacy token rows are backed up before migration.
+- [ ] Stored credential fields use `qb:v1:` envelopes after first use.
 
-## ☐ 3. Run Database Migration
+## Automated verification
 
-Choose one method:
+- [ ] `uv run --isolated --with-requirements requirements.txt pytest -q tests/test_qb_token_crypto.py tests/test_quickbooks_service.py tests/test_routes_quickbooks.py` passes.
+- [ ] `uv run --isolated --with-requirements requirements-runtime.txt python -m py_compile quickbooks_service.py routes_quickbooks.py qb_token_crypto.py` passes.
+- [ ] Tests use mocked SDK clients and block HTTP.
+- [ ] The sandbox-only `test_quickbooks.py` smoke tool is not run under pytest or against production.
 
-### Method A: Migration Script
-```bash
-cd idc-backend
-python scripts/migrate_quickbooks.py
-```
-- [ ] Script completed successfully
-- [ ] No errors in output
+## OAuth sandbox validation
 
-### Method B: Direct SQL (if can't connect locally)
-- [ ] Connect to AWS RDS via pgAdmin or AWS Console
-- [ ] Run SQL from `scripts/migrate_quickbooks.py` comments
-- [ ] Verify tables created: `quickbooks_tokens`
-- [ ] Verify columns added to `clients` and `transactions`
+- [ ] Only an authenticated admin can request an authorization URL.
+- [ ] Two connect attempts produce different signed states.
+- [ ] Only a nonce hash is stored.
+- [ ] Callback redirects to `<FRONTEND_URL>/quickbooks?connection=success`.
+- [ ] Invalid, expired, or replayed state redirects with `connection=error`.
+- [ ] Callback responses contain no custom HTML or error details.
+- [ ] A state remains consumed when token exchange fails.
+- [ ] Status reports connection and expiry times without realm or token fields.
 
-## ☐ 4. Verify Backend Deployment
+## Invoice sandbox validation
 
-- [ ] Backend redeployed with new environment variables
-- [ ] No deployment errors in Render logs
-- [ ] Backend is accessible: `https://idc-app.onrender.com/health`
-- [ ] QuickBooks routes registered (check logs for blueprint registration)
+- [ ] Invoice preview matches the intended customer-facing charges.
+- [ ] A stale preview is rejected before any Intuit invoice request.
+- [ ] The disposable transaction is USD; non-USD invoice creation is rejected in v1.
+- [ ] The sandbox result confirms the intended tax behavior and final total.
+- [ ] Supplier quote remains internal margin context.
+- [ ] Only selected associated costs are billed.
+- [ ] Customer-entered memo text is at most 650 characters and the combined QuickBooks memo is at most 1,000.
+- [ ] Every invoice line description is at most 4,000 characters.
+- [ ] A non-USD supplier quote is displayed as context but excluded from the USD margin basis.
+- [ ] Supplier PO details are absent from the customer memo.
+- [ ] The configured existing service item is used.
+- [ ] Missing service item fails without creating an item or income account.
+- [ ] No invoice attachment is attempted.
+- [ ] Customer mapping is stored against the current realm fingerprint.
+- [ ] The transaction row is locked through the invoice request.
+- [ ] A durable attempt is present before the invoice request.
+- [ ] Request ID is stable and no longer than 50 characters.
+- [ ] Success uses the object returned by `Invoice.save`.
+- [ ] Success updates attempt result and all transaction synchronization fields.
+- [ ] A repeated successful operation does not create a second invoice.
+- [ ] A changed payload or realm is rejected for an existing attempt.
+- [ ] An uncertain outcome is `unknown` and retries with the same request ID.
 
-## ☐ 5. Connect QuickBooks (OAuth Flow)
+## Disconnect and release
 
-### Get Admin Token:
-- [ ] Log into your app at https://your-frontend.vercel.app
-- [ ] Open browser DevTools → Console
-- [ ] Run: `localStorage.getItem('access_token')`
-- [ ] Copy the token: ___________________________
-
-### Initiate OAuth:
-```bash
-curl -X GET https://idc-app.onrender.com/quickbooks/auth/connect \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
-```
-- [ ] Command successful
-- [ ] Received `authorization_url` in response
-- [ ] Copy authorization URL: ___________________________
-
-### Authorize in QuickBooks:
-- [ ] Open authorization URL in browser
-- [ ] Sign in to QuickBooks
-- [ ] Review permissions
-- [ ] Click "Authorize"
-- [ ] Redirected back to your app
-- [ ] URL shows `?qb=connected` (or similar)
-
-## ☐ 6. Verify Connection
-
-```bash
-curl -X GET https://idc-app.onrender.com/quickbooks/status \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
-```
-- [ ] Response shows `"connected": true`
-- [ ] Response includes `realm_id`
-- [ ] Response includes token expiration dates
-
-## ☐ 7. Test Invoice Creation (Via UI)
-
-- [ ] Open your app in browser
-- [ ] Navigate to a transaction (or create a test one)
-- [ ] Go to "Financials" tab
-- [ ] Verify "Create Invoice in QuickBooks" button is visible
-- [ ] Add a supplier quote (or ensure client PO amount is set)
-- [ ] Add some associated costs (optional)
-- [ ] Click "Create Invoice in QuickBooks"
-- [ ] Success toast appears with invoice number
-- [ ] Transaction page refreshes showing invoice info
-
-### Verify in QuickBooks:
-- [ ] Log into QuickBooks Online
-- [ ] Navigate to Sales → Invoices
-- [ ] Find the newly created invoice
-- [ ] Verify customer name matches your client
-- [ ] Verify line items are correct
-- [ ] Verify amounts match
-- [ ] Verify notes include RFQ/PO numbers
-
-## ☐ 8. Test with Script (Optional - Local Only)
-
-```bash
-cd idc-backend
-
-# Check connection
-python test_quickbooks.py check-connection
-# Expected: "QuickBooks is connected!"
-
-# Create test data and run full test
-python test_quickbooks.py full-test
-# Expected: Creates test transaction and invoice
-```
-- [ ] Connection check passes
-- [ ] Full test creates invoice successfully
-- [ ] Invoice visible in QuickBooks
-
-## ☐ 9. Test Error Scenarios
-
-### Already Invoiced:
-- [ ] Try creating invoice for same transaction again
-- [ ] Verify error message: "Invoice already exists"
-
-### Not Connected:
-- [ ] Disconnect QB: `POST /quickbooks/disconnect`
-- [ ] Try creating invoice
-- [ ] Verify error: "QuickBooks not connected"
-- [ ] Reconnect via OAuth flow
-
-### Invalid Transaction:
-- [ ] Try creating invoice for non-existent transaction ID
-- [ ] Verify 404 error
-
-## ☐ 10. Production Readiness
-
-- [ ] All tests passed
-- [ ] Documentation reviewed
-- [ ] Team trained on invoice workflow
-- [ ] Backup strategy for `quickbooks_tokens` table
-- [ ] Token expiration monitoring set up (100 days)
-- [ ] Admin access controls verified
-- [ ] Logs reviewed for any warnings
-
-## ☐ 11. Optional Enhancements
-
-- [ ] Add QuickBooks connection status to Settings page
-- [ ] Add "Connect QuickBooks" button in UI
-- [ ] Add visual indicator when transaction is invoiced
-- [ ] Add link to view invoice in QuickBooks
-- [ ] Set up token expiration notifications
-- [ ] Add webhook listeners for QB events
-
----
-
-## Troubleshooting
-
-If you encounter issues, refer to:
-- `QUICKBOOKS_SETUP.md` - Full setup guide
-- `QUICKBOOKS_NEXT_STEPS.md` - Step-by-step instructions
-- Backend logs on Render
-- QuickBooks API logs in developer portal
-- `python test_quickbooks.py --help` for testing options
-
----
-
-## Completion
-
-- [ ] All steps completed successfully
-- [ ] QuickBooks integration is live
-- [ ] Team can create invoices from transactions
-
-**Completed by:** ___________________________
-
-**Date:** ___________________________
-
-**Notes:**
+- [ ] Remote Intuit revocation occurs before local deletion.
+- [ ] Revocation failure preserves the local token row and returns `502`.
+- [ ] Sandbox evidence has been reviewed before switching to production credentials.
+- [ ] No `pending` or `unknown` attempts are left unresolved at launch.
+- [ ] Operations staff know that attachments and automatic item creation are not supported in v1.

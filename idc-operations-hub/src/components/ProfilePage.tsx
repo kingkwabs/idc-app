@@ -1,203 +1,375 @@
-import { useState, useEffect } from "react";
-import { User } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { KeyRound, LoaderCircle, Save, ShieldCheck, UserRound } from "lucide-react";
+import { toast } from "sonner";
+import {
+  ApiError,
+  changeCurrentUserPassword,
+  updateCurrentUser,
+  type Employee,
+} from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { toast } from "sonner";
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001';
-
-interface UserProfile {
-  id: number;
-  name: string;
-  email: string;
-  role: string;
+function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 }
 
-export function ProfilePage() {
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: ''
+function getAccountErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiError)) return fallback;
+
+  switch (error.payload.error) {
+    case "email_exists":
+      return "That email address is already in use.";
+    case "current_password_required":
+    case "invalid_current_password":
+      return "Your current password is incorrect.";
+    case "password_reuse_not_allowed":
+      return "Your new password must be different from your current password.";
+    case "weak_password":
+      return error.message;
+    default:
+      return fallback;
+  }
+}
+
+interface ProfileFormsProps {
+  user: Employee;
+  onUserChange: (user: Employee) => void;
+}
+
+function ProfileForms({ user, onUserChange }: ProfileFormsProps) {
+  const [profile, setProfile] = useState({
+    name: user.name,
+    email: user.email,
+    currentPassword: "",
   });
+  const [password, setPassword] = useState({
+    current: "",
+    next: "",
+    confirm: "",
+  });
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
+  const normalizedName = profile.name.trim().replace(/\s+/g, " ");
+  const normalizedEmail = profile.email.trim().toLowerCase();
+  const emailChanged = normalizedEmail !== user.email;
+  const profileChanged = normalizedName !== user.name || emailChanged;
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('access_token');
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    };
-  };
+  const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setProfileError(null);
 
-  const fetchProfile = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/auth/me`, {
-        headers: getAuthHeaders()
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data.user);
-        setFormData({
-          name: data.user.name,
-          email: data.user.email,
-          password: ''
-        });
-      } else {
-        toast.error('Failed to fetch profile');
-      }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-      toast.error('Error fetching profile');
-    } finally {
-      setLoading(false);
+    if (!profileChanged) {
+      setProfileError("Make a change to your name or email before saving.");
+      return;
     }
-  };
-
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!user) return;
-
-    // Only send fields that have changed
-    const updatePayload: any = {};
-    if (formData.name && formData.name !== user.name) {
-      updatePayload.name = formData.name;
-    }
-    if (formData.email && formData.email !== user.email) {
-      updatePayload.email = formData.email;
-    }
-    if (formData.password) {
-      updatePayload.password = formData.password;
-    }
-
-    if (Object.keys(updatePayload).length === 0) {
-      toast.error('No changes to save');
+    if (emailChanged && !profile.currentPassword) {
+      setProfileError("Enter your current password to change your email address.");
       return;
     }
 
+    setIsSavingProfile(true);
     try {
-      const response = await fetch(`${API_BASE}/auth/me`, {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(updatePayload)
+      const response = await updateCurrentUser({
+        ...(normalizedName !== user.name ? { name: normalizedName } : {}),
+        ...(emailChanged
+          ? { email: normalizedEmail, current_password: profile.currentPassword }
+          : {}),
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Update token if it changed
-        if (data.access_token) {
-          localStorage.setItem('access_token', data.access_token);
-        }
-        toast.success('Profile updated successfully');
-        setFormData({ ...formData, password: '' }); // Clear password field
-        fetchProfile(); // Refresh data
-      } else {
-        const data = await response.json();
-        toast.error(data.error === 'email_exists' ? 'Email already exists' : 'Failed to update profile');
-      }
+      onUserChange(response.user);
+      setProfile((current) => ({
+        ...current,
+        name: response.user.name,
+        email: response.user.email,
+        currentPassword: "",
+      }));
+      toast.success("Profile updated");
     } catch (error) {
-      console.error('Error updating profile:', error);
-      toast.error('Error updating profile');
+      setProfileError(getAccountErrorMessage(error, "We could not update your profile. Please try again."));
+    } finally {
+      setIsSavingProfile(false);
     }
   };
 
-  if (loading) {
+  const handlePasswordSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError(null);
+
+    if (password.next.length < 12) {
+      setPasswordError("Your new password must be at least 12 characters.");
+      return;
+    }
+    if (password.next !== password.confirm) {
+      setPasswordError("The new password and confirmation do not match.");
+      return;
+    }
+    if (password.current === password.next) {
+      setPasswordError("Your new password must be different from your current password.");
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      const response = await changeCurrentUserPassword({
+        current_password: password.current,
+        new_password: password.next,
+      });
+      onUserChange(response.user);
+      setPassword({ current: "", next: "", confirm: "" });
+      toast.success("Password changed");
+    } catch (error) {
+      setPasswordError(getAccountErrorMessage(error, "We could not change your password. Please try again."));
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-border bg-card text-xl font-semibold text-card-foreground shadow-sm">
+          {getInitials(user.name)}
+        </div>
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-3xl font-semibold tracking-tight text-foreground">{user.name}</h1>
+            <Badge variant="secondary" className="capitalize">{user.role}</Badge>
+          </div>
+          <p className="text-muted-foreground">Manage your identity and account security.</p>
+        </div>
+      </header>
+
+      {user.must_change_password && (
+        <Alert>
+          <ShieldCheck aria-hidden="true" />
+          <AlertTitle>Password change required</AlertTitle>
+          <AlertDescription>
+            Your account is using a temporary password. Choose a new password before continuing regular work.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="bg-card/95 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                <UserRound aria-hidden="true" className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle>Profile details</CardTitle>
+                <CardDescription>Update the name and email shown across the workspace.</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-5" onSubmit={handleProfileSubmit}>
+              {profileError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{profileError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="profile-name">Full name</Label>
+                <Input
+                  id="profile-name"
+                  name="name"
+                  autoComplete="name"
+                  minLength={2}
+                  maxLength={120}
+                  required
+                  value={profile.name}
+                  onChange={(event) => setProfile({ ...profile, name: event.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="profile-email">Email address</Label>
+                <Input
+                  id="profile-email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={profile.email}
+                  onChange={(event) => setProfile({ ...profile, email: event.target.value })}
+                />
+              </div>
+
+              {emailChanged && (
+                <div className="space-y-2">
+                  <Label htmlFor="profile-current-password">Current password</Label>
+                  <Input
+                    id="profile-current-password"
+                    name="current-password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={profile.currentPassword}
+                    onChange={(event) => setProfile({ ...profile, currentPassword: event.target.value })}
+                    aria-describedby="profile-current-password-help"
+                  />
+                  <p id="profile-current-password-help" className="text-xs text-muted-foreground">
+                    Required to verify an email address change.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setProfile({ name: user.name, email: user.email, currentPassword: "" });
+                    setProfileError(null);
+                  }}
+                  disabled={isSavingProfile}
+                >
+                  Reset
+                </Button>
+                <Button type="submit" disabled={isSavingProfile || !profileChanged}>
+                  {isSavingProfile ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Save aria-hidden="true" />}
+                  {isSavingProfile ? "Saving..." : "Save profile"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card/95 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                <KeyRound aria-hidden="true" className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle>Change password</CardTitle>
+                <CardDescription>Use at least 12 characters and avoid personal details.</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-5" onSubmit={handlePasswordSubmit}>
+              {passwordError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{passwordError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="password-current">Current password</Label>
+                <Input
+                  id="password-current"
+                  name="current-password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password.current}
+                  onChange={(event) => setPassword({ ...password, current: event.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password-new">New password</Label>
+                <Input
+                  id="password-new"
+                  name="new-password"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  maxLength={128}
+                  required
+                  value={password.next}
+                  onChange={(event) => setPassword({ ...password, next: event.target.value })}
+                  aria-describedby="password-new-help"
+                />
+                <p id="password-new-help" className="text-xs text-muted-foreground">12 to 128 characters.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password-confirm">Confirm new password</Label>
+                <Input
+                  id="password-confirm"
+                  name="confirm-password"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  maxLength={128}
+                  required
+                  value={password.confirm}
+                  onChange={(event) => setPassword({ ...password, confirm: event.target.value })}
+                />
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button
+                  type="submit"
+                  disabled={isSavingPassword || !password.current || !password.next || !password.confirm}
+                >
+                  {isSavingPassword ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <KeyRound aria-hidden="true" />}
+                  {isSavingPassword ? "Updating..." : "Update password"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+export function ProfilePage() {
+  const { user, isLoading, refreshUser, syncUser } = useAuth();
+
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading profile...</div>
+      <div className="flex min-h-64 items-center justify-center text-muted-foreground" role="status">
+        <LoaderCircle aria-hidden="true" className="mr-2 h-5 w-5 animate-spin" />
+        Loading profile...
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Failed to load profile</div>
-      </div>
+      <Alert variant="destructive" className="mx-auto max-w-xl">
+        <AlertTitle>Profile unavailable</AlertTitle>
+        <AlertDescription className="gap-3">
+          <p>We could not load your account details.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void refreshUser().catch(() => toast.error("We still could not load your profile."));
+            }}
+          >
+            Try again
+          </Button>
+        </AlertDescription>
+      </Alert>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <div className="h-20 w-20 bg-teal-100 rounded-full flex items-center justify-center">
-          <span className="text-teal-600 font-bold text-2xl">
-            {user.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
-          </span>
-        </div>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">{user.name}</h1>
-          <p className="text-gray-600 capitalize">{user.role}</p>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Edit Profile</h2>
-
-        <form onSubmit={handleUpdateProfile} className="space-y-4">
-          <div>
-            <Label htmlFor="name">Full Name</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              required
-              placeholder="John Doe"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              required
-              placeholder="john@example.com"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="password">New Password (leave blank to keep current)</Label>
-            <Input
-              id="password"
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="••••••••"
-              minLength={6}
-            />
-            <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
-          </div>
-
-          <div>
-            <Label>Role</Label>
-            <Input
-              value={user.role}
-              disabled
-              className="bg-gray-100 cursor-not-allowed capitalize"
-            />
-            <p className="text-xs text-gray-500 mt-1">Contact an administrator to change your role</p>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={fetchProfile}>
-              Reset
-            </Button>
-            <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
-              Save Changes
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <ProfileForms
+      key={`${user.id}:${user.updated_at}:${user.email}:${user.must_change_password}`}
+      user={user}
+      onUserChange={syncUser}
+    />
   );
 }

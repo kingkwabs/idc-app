@@ -25,3 +25,10 @@ server.log
 .coverage
 
 databasetest.py
+
+# Credentials and private operational data
+*.pem
+*.key
+past_data.xlsx
+private-data/
+graphify-out/

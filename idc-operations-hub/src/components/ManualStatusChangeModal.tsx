@@ -1,6 +1,13 @@
-import { useState } from "react";
-import { AlertTriangle } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { useEffect, useState, type FormEvent } from "react";
+import { AlertTriangle, Loader2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -10,161 +17,191 @@ import { getWorkflowStatusLabel, MANUAL_WORKFLOW_STATUSES } from "../lib/workflo
 interface ManualStatusChangeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: { newStatus: string; reason: string }) => void;
+  onSubmit: (data: { newStatus: string; reason: string }) => void | Promise<void>;
   currentStatus?: string;
 }
+
+const EMPTY_FORM = { newStatus: "", reason: "" };
 
 export function ManualStatusChangeModal({
   isOpen,
   onClose,
   onSubmit,
-  currentStatus = "rfq-from-client"
+  currentStatus = "rfq-from-client",
 }: ManualStatusChangeModalProps) {
-  const [formData, setFormData] = useState({
-    newStatus: "",
-    reason: ""
-  });
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState<{ newStatus?: string; reason?: string }>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Reset errors
-    const newErrors: { newStatus?: string; reason?: string } = {};
-    
-    // Validation
-    if (!formData.newStatus) {
-      newErrors.newStatus = "Please select a new status";
-    }
-    
-    if (!formData.reason.trim()) {
-      newErrors.reason = "A reason for the change is required";
-    }
-    
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
-    
-    // Submit the form
-    onSubmit(formData);
-    
-    // Reset form and close modal
-    setFormData({ newStatus: "", reason: "" });
+  useEffect(() => {
+    if (isOpen) return;
+    setFormData(EMPTY_FORM);
     setErrors({});
-    onClose();
+    setSubmitError(null);
+    setIsSubmitting(false);
+  }, [isOpen]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const nextErrors: { newStatus?: string; reason?: string } = {};
+    if (!formData.newStatus) {
+      nextErrors.newStatus = "Select a new status.";
+    } else if (formData.newStatus === currentStatus) {
+      nextErrors.newStatus = "Choose a status different from the current status.";
+    }
+    if (!formData.reason.trim()) {
+      nextErrors.reason = "Explain why this override is necessary.";
+    }
+
+    setErrors(nextErrors);
+    setSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        newStatus: formData.newStatus,
+        reason: formData.reason.trim(),
+      });
+      // The parent closes only after its status update succeeds.
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "The status could not be updated. Please try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleClose = () => {
-    setFormData({ newStatus: "", reason: "" });
+    if (isSubmitting) return;
+    setFormData(EMPTY_FORM);
     setErrors({});
+    setSubmitError(null);
     onClose();
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="glass-card max-w-md w-full mx-auto backdrop-blur-lg border border-white/20 shadow-2xl">
-        <DialogHeader className="relative">
-          <DialogTitle className="text-xl font-semibold text-gray-900 pr-8">
-            Manually Change Status
-          </DialogTitle>
-          <DialogDescription className="text-sm text-gray-600">
-            Override the current transaction status with manual intervention.
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) handleClose();
+      }}
+    >
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Override workflow status</DialogTitle>
+          <DialogDescription>
+            Use this only when the transaction cannot follow its normal sequence. The status remains unchanged until the update succeeds.
           </DialogDescription>
-
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Current Status Display */}
-          <div className="glass-card p-4 rounded-lg bg-gray-50/80 border border-gray-200/50">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              <Label className="text-sm font-medium text-gray-700">
-                Current Status: <span className="text-gray-900">{getWorkflowStatusLabel(currentStatus)}</span>
-              </Label>
+        <form noValidate onSubmit={handleSubmit} className="space-y-5">
+          <div className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] p-3 text-[var(--color-warning-foreground)]">
+            <div className="flex items-start gap-3">
+              <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.08em]">Current status</p>
+                <p className="mt-1 text-sm font-medium">{getWorkflowStatusLabel(currentStatus)}</p>
+              </div>
             </div>
           </div>
 
-          {/* New Status Selection */}
           <div className="space-y-2">
-            <Label htmlFor="newStatus" className="text-sm font-medium text-gray-700">
-              New Status <span className="text-red-500">*</span>
+            <Label htmlFor="manual-status">
+              New status <span className="text-destructive">Required</span>
             </Label>
-            <Select value={formData.newStatus} onValueChange={(value) => {
-              setFormData(prev => ({ ...prev, newStatus: value }));
-              setErrors(prev => ({ ...prev, newStatus: undefined }));
-            }}>
-              <SelectTrigger 
-                className={`glass backdrop-blur-sm border-white/20 hover:border-white/40 transition-all duration-200 ${
-                  errors.newStatus ? 'border-red-300 ring-red-200' : ''
-                }`}
+            <Select
+              value={formData.newStatus}
+              disabled={isSubmitting}
+              onValueChange={(value) => {
+                setFormData((previous) => ({ ...previous, newStatus: value }));
+                setErrors((previous) => ({ ...previous, newStatus: undefined }));
+                setSubmitError(null);
+              }}
+            >
+              <SelectTrigger
+                id="manual-status"
+                aria-invalid={Boolean(errors.newStatus)}
+                aria-describedby={errors.newStatus ? "manual-status-error" : undefined}
               >
-                <SelectValue placeholder="Select new status..." />
+                <SelectValue placeholder="Select a workflow status" />
               </SelectTrigger>
-              <SelectContent className="glass backdrop-blur-sm">
+              <SelectContent>
                 {MANUAL_WORKFLOW_STATUSES.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
+                  <SelectItem
+                    key={option.id}
+                    value={option.id}
+                    disabled={option.id === currentStatus}
+                  >
                     {option.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errors.newStatus && (
-              <p className="text-sm text-red-600">{errors.newStatus}</p>
-            )}
+            {errors.newStatus ? (
+              <p id="manual-status-error" role="alert" className="text-sm text-destructive">
+                {errors.newStatus}
+              </p>
+            ) : null}
           </div>
 
-          {/* Reason for Change */}
           <div className="space-y-2">
-            <Label htmlFor="reason" className="text-sm font-medium text-gray-700">
-              Reason for Change <span className="text-red-500">*</span>
+            <Label htmlFor="manual-status-reason">
+              Reason for override <span className="text-destructive">Required</span>
             </Label>
             <Textarea
-              id="reason"
+              id="manual-status-reason"
               value={formData.reason}
-              onChange={(e) => {
-                setFormData(prev => ({ ...prev, reason: e.target.value }));
-                setErrors(prev => ({ ...prev, reason: undefined }));
+              disabled={isSubmitting}
+              aria-invalid={Boolean(errors.reason)}
+              aria-describedby={errors.reason ? "manual-status-reason-error" : "manual-status-reason-help"}
+              onChange={(event) => {
+                setFormData((previous) => ({ ...previous, reason: event.target.value }));
+                setErrors((previous) => ({ ...previous, reason: undefined }));
+                setSubmitError(null);
               }}
-              placeholder="A mandatory reason is required..."
+              placeholder="Describe the operational reason for changing this status"
               rows={4}
-              className={`glass backdrop-blur-sm border-white/20 hover:border-white/40 focus:border-white/60 transition-all duration-200 resize-none ${
-                errors.reason ? 'border-red-300 ring-red-200' : ''
-              }`}
             />
-            {errors.reason && (
-              <p className="text-sm text-red-600">{errors.reason}</p>
-            )}
-          </div>
-
-          {/* Warning Message */}
-          <div className="glass-card p-3 rounded-lg bg-red-50/80 border border-red-200/50">
-            <div className="flex items-start space-x-2">
-              <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-700">
-                This action will override the natural workflow progression. Manual status changes should only be used in exceptional circumstances.
+            <p id="manual-status-reason-help" className="text-xs leading-4 text-muted-foreground">
+              Be specific enough that another operator can understand the exception later.
+            </p>
+            {errors.reason ? (
+              <p id="manual-status-reason-error" role="alert" className="text-sm text-destructive">
+                {errors.reason}
               </p>
-            </div>
+            ) : null}
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex space-x-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleClose}
-              className="flex-1 glass backdrop-blur-sm border-white/40 hover:bg-white/20 text-gray-700 hover:text-gray-900 transition-all duration-200"
+          <div className="rounded-md border border-[var(--color-accent-border)] bg-accent p-3 text-sm leading-5 text-accent-foreground">
+            This bypasses the normal progression and may affect downstream shipment or finance work.
+          </div>
+
+          {submitError ? (
+            <div
+              role="alert"
+              className="rounded-md border border-destructive bg-[var(--color-destructive-soft)] p-3 text-sm text-destructive"
             >
+              {submitError}
+            </div>
+          ) : null}
+
+          <DialogFooter className="pt-1">
+            <Button type="button" variant="outline" onClick={handleClose} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              className="flex-1 bg-red-500 hover:bg-red-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
-              style={{ backgroundColor: '#EF4444' }}
-            >
-              Update Status
+            <Button type="submit" variant="destructive" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+              ) : null}
+              {isSubmitting ? "Updating status..." : "Update status"}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

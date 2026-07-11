@@ -1,22 +1,22 @@
 import * as React from "react";
-import { Slot } from "@radix-ui/react-slot"
-import { cva, type VariantProps } from "class-variance-authority"
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "./utils";
 
 const badgeVariants = cva(
-  "inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-medium outline-none transition-[color,background-color,border-color,box-shadow] duration-150 [transition-timing-function:var(--ease-out-ui)] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-[var(--color-ring-soft)] aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-[var(--color-destructive-ring)] motion-reduce:transition-none [&>svg]:pointer-events-none [&>svg]:size-3",
   {
     variants: {
       variant: {
         default:
-          "border-transparent bg-primary text-primary-foreground [a&]:hover:bg-primary/90",
+          "border-[var(--color-accent-border)] bg-accent text-accent-foreground [a&]:hover:bg-[var(--color-accent-hover)]",
         secondary:
-          "border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
+          "border-border bg-secondary text-secondary-foreground [a&]:hover:bg-[var(--color-secondary-hover)]",
         destructive:
-          "border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "border-[var(--color-accent-border)] bg-[var(--color-destructive-soft)] text-destructive [a&]:hover:bg-[var(--color-accent-hover)] focus-visible:ring-[var(--color-destructive-ring)]",
         outline:
-          "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+          "border-border bg-card text-foreground [a&]:hover:bg-secondary",
       },
     },
     defaultVariants: {
@@ -43,4 +43,5 @@ function Badge({
   );
 }
 
+// Keep variant composition available to non-component consumers.
 export { Badge, badgeVariants };

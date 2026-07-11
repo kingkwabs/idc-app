@@ -13,6 +13,9 @@ Usage:
     python test_quickbooks.py full-test
 """
 
+# This is a manually invoked sandbox smoke tool, not a pytest test module.
+__test__ = False
+
 import os
 import sys
 import argparse
@@ -20,6 +23,7 @@ from datetime import datetime
 from database import db_session, get_engine
 from models import Base, Client, Transaction, SupplierQuote, AssociatedCost, Supplier
 from quickbooks_service import QuickBooksService
+from routes_quickbooks import _build_invoice_plan
 
 # Colors for terminal output
 class Colors:
@@ -52,14 +56,21 @@ def check_env_vars():
     """Check if required environment variables are set"""
     print_header("Checking Environment Variables")
 
-    required_vars = ['QB_CLIENT_ID', 'QB_CLIENT_SECRET', 'QB_REDIRECT_URI', 'QB_ENVIRONMENT']
+    required_vars = [
+        'QB_CLIENT_ID',
+        'QB_CLIENT_SECRET',
+        'QB_REDIRECT_URI',
+        'QB_ENVIRONMENT',
+        'QB_TOKEN_ENCRYPTION_KEY',
+        'QB_SERVICE_ITEM_NAME',
+    ]
     missing = []
 
     for var in required_vars:
         value = os.getenv(var)
         if value:
             # Mask sensitive values
-            if 'SECRET' in var:
+            if 'SECRET' in var or 'KEY' in var:
                 display_value = value[:4] + '...' + value[-4:] if len(value) > 8 else '***'
             else:
                 display_value = value
@@ -89,12 +100,7 @@ def check_connection():
 
         if not qb_service.is_connected():
             print_error("QuickBooks is not connected")
-            print_info("\nTo connect QuickBooks:")
-            print_info("1. Start your Flask server: python app.py")
-            print_info("2. Get auth URL: curl -X GET http://localhost:5001/quickbooks/auth/connect \\")
-            print_info("   -H 'Authorization: Bearer YOUR_ADMIN_TOKEN'")
-            print_info("3. Open the authorization_url in your browser")
-            print_info("4. Authorize the app in QuickBooks")
+            print_info("Connect the sandbox company from the authenticated QuickBooks settings page.")
             return False
 
         print_success("QuickBooks is connected!")
@@ -103,7 +109,6 @@ def check_connection():
         from models import QuickBooksToken
         token = session.query(QuickBooksToken).first()
         if token:
-            print_info(f"Realm ID: {token.realm_id}")
             print_info(f"Token expires at: {token.token_expires_at}")
             print_info(f"Refresh expires at: {token.refresh_expires_at}")
 
@@ -126,7 +131,7 @@ def create_test_data():
         # Check if test client exists
         test_client = session.query(Client).filter(Client.name == "Test Client QB").first()
         if not test_client:
-            test_client = Client(name="Test Client QB", contact_person="John Doe", email="test@example.com")
+            test_client = Client(name="Test Client QB", contact_name="John Doe", email="test@example.com")
             session.add(test_client)
             session.commit()
             print_success(f"Created test client: {test_client.name} (ID: {test_client.id})")
@@ -136,7 +141,7 @@ def create_test_data():
         # Check if test supplier exists
         test_supplier = session.query(Supplier).filter(Supplier.name == "Test Supplier QB").first()
         if not test_supplier:
-            test_supplier = Supplier(name="Test Supplier QB", contact_person="Jane Smith")
+            test_supplier = Supplier(name="Test Supplier QB", contact_name="Jane Smith")
             session.add(test_supplier)
             session.commit()
             print_success(f"Created test supplier: {test_supplier.name} (ID: {test_supplier.id})")
@@ -150,8 +155,7 @@ def create_test_data():
             client_po_number=f"TEST-PO-{datetime.now().strftime('%Y%m%d%H%M%S')}",
             client_po_amount=5000.00,
             item_description="Test Equipment for QuickBooks Integration",
-            status="Quote Approved",
-            created_at=datetime.utcnow()
+            status="prepare-proposal",
         )
         session.add(test_transaction)
         session.commit()
@@ -223,7 +227,7 @@ def test_customer_creation(client_id=None):
 
             return True
         except Exception as e:
-            print_error(f"Failed to create/find customer: {str(e)}")
+            print_error(f"Failed to create/find customer ({type(e).__name__})")
             return False
 
 
@@ -260,28 +264,14 @@ def test_invoice_creation(transaction_id=None):
             print_info("Skipping invoice creation")
             return True
 
-        # Build line items
-        line_items = []
-
-        # Add client PO amount
-        if transaction.client_po_amount:
-            line_items.append({
-                "description": transaction.item_description or "Services Rendered",
-                "amount": float(transaction.client_po_amount),
-                "quantity": 1
-            })
-
-        # Add associated costs
-        costs = session.query(AssociatedCost).filter(
-            AssociatedCost.transaction_id == transaction.id
-        ).all()
-
-        for cost in costs:
-            line_items.append({
-                "description": cost.description,
-                "amount": float(cost.amount),
-                "quantity": 1
-            })
+        # Reuse the production planner. Associated costs stay internal unless
+        # their IDs are explicitly supplied to the planner.
+        plan = _build_invoice_plan(session, transaction)
+        if not plan["can_create"]:
+            for error in plan["errors"]:
+                print_error(error)
+            return False
+        line_items = plan["line_items"]
 
         print_info(f"\nInvoice will have {len(line_items)} line items:")
         total = 0
@@ -290,22 +280,17 @@ def test_invoice_creation(transaction_id=None):
             total += item['amount']
         print_info(f"Total: ${total:.2f}")
 
-        # Build notes
-        notes_parts = []
-        if transaction.rfq_number:
-            notes_parts.append(f"RFQ: {transaction.rfq_number}")
-        if transaction.client_po_number:
-            notes_parts.append(f"Client PO: {transaction.client_po_number}")
-        notes = " | ".join(notes_parts)
-
         # Create invoice
         try:
             print_info("\nCreating invoice in QuickBooks...")
+            qb_client = qb_service.get_client()
             result = qb_service.create_invoice(
                 transaction=transaction,
                 line_items=line_items,
-                notes=notes,
-                attach_documents=False  # Skip document attachment for testing
+                notes=plan["notes"],
+                attach_documents=False,
+                qb_client=qb_client,
+                currency=plan["currency"],
             )
 
             print_success("Invoice created successfully!")
@@ -315,9 +300,7 @@ def test_invoice_creation(transaction_id=None):
 
             return True
         except Exception as e:
-            print_error(f"Failed to create invoice: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print_error(f"Failed to create invoice ({type(e).__name__})")
             return False
 
 
@@ -351,6 +334,13 @@ def full_test():
 
 
 def main():
+    if os.getenv("QB_ENVIRONMENT", "").lower() != "sandbox":
+        print_error("Refusing to run: QB_ENVIRONMENT must be sandbox.")
+        return 2
+    if os.getenv("QB_ALLOW_SANDBOX_SMOKE", "").lower() not in {"1", "true", "yes"}:
+        print_error("Refusing to run: set QB_ALLOW_SANDBOX_SMOKE=true explicitly.")
+        return 2
+
     parser = argparse.ArgumentParser(
         description='QuickBooks Integration Test Suite',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -403,9 +393,7 @@ Examples:
         print_error("\n\nTest interrupted by user")
         return 1
     except Exception as e:
-        print_error(f"\nUnexpected error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print_error(f"\nUnexpected error ({type(e).__name__})")
         return 1
 
 

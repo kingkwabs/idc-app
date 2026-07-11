@@ -1,155 +1,204 @@
-import { useState, useEffect } from "react";
-import { Plus } from "lucide-react";
+import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
+import { LoaderCircle, Plus } from "lucide-react";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+
 import { Header } from "./components/Header";
-import { Sidebar } from "./components/Sidebar";
-import { KPICards } from "./components/KPICards";
-import { TransactionsTable } from "./components/TransactionsTable";
-import { TransactionDetail } from "./components/TransactionDetail";
-import { CreateTransactionModal } from "./components/CreateTransactionModal";
-import { ClientsPage } from "./components/ClientsPage";
-import { SuppliersPage } from "./components/SuppliersPage";
-import { EmployeesPage } from "./components/EmployeesPage";
-import { ProfilePage } from "./components/ProfilePage";
-import { QuickBooksSettingsPage } from "./components/QuickBooksSettingsPage";
+import { LegalPage } from "./components/LegalPage";
+import { LoginPage } from "./components/LoginPage";
+import { QuickBooksDisconnectedPage } from "./components/QuickBooksDisconnectedPage";
+import { Sidebar, type SidebarView } from "./components/Sidebar";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
-import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
-import { LoginPage } from "./components/LoginPage";
-import { LegalPage } from "./components/LegalPage";
+import { useAuth } from "./lib/auth";
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001';
+const KPICards = lazy(() =>
+  import("./components/KPICards").then(({ KPICards }) => ({ default: KPICards })),
+);
+const TransactionsTable = lazy(() =>
+  import("./components/TransactionsTable").then(({ TransactionsTable }) => ({ default: TransactionsTable })),
+);
+const TransactionDetail = lazy(() =>
+  import("./components/TransactionDetail").then(({ TransactionDetail }) => ({ default: TransactionDetail })),
+);
+const CreateTransactionModal = lazy(() =>
+  import("./components/CreateTransactionModal").then(({ CreateTransactionModal }) => ({ default: CreateTransactionModal })),
+);
+const ClientsPage = lazy(() =>
+  import("./components/ClientsPage").then(({ ClientsPage }) => ({ default: ClientsPage })),
+);
+const SuppliersPage = lazy(() =>
+  import("./components/SuppliersPage").then(({ SuppliersPage }) => ({ default: SuppliersPage })),
+);
+const EmployeesPage = lazy(() =>
+  import("./components/EmployeesPage").then(({ EmployeesPage }) => ({ default: EmployeesPage })),
+);
+const ProfilePage = lazy(() =>
+  import("./components/ProfilePage").then(({ ProfilePage }) => ({ default: ProfilePage })),
+);
+const QuickBooksSettingsPage = lazy(() =>
+  import("./components/QuickBooksSettingsPage").then(({ QuickBooksSettingsPage }) => ({ default: QuickBooksSettingsPage })),
+);
 
-export default function App() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [userRole, setUserRole] = useState<string>('');
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null;
-  const location = useLocation();
-  const navigate = useNavigate();
+function PageLoading() {
+  return (
+    <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-muted-foreground" role="status">
+      <LoaderCircle aria-hidden="true" className="size-5 animate-spin" />
+      Loading workspace...
+    </div>
+  );
+}
 
-  useEffect(() => {
-    if (token) {
-      fetchUserRole();
-    }
-  }, [token]);
+function SessionLoading() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background px-6" role="status">
+      <div className="flex flex-col items-center gap-5 text-center">
+        <img src="/idce_logo.avif" alt="IDC Energy" className="h-14 w-auto" />
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <LoaderCircle aria-hidden="true" className="size-5 animate-spin text-primary" />
+          Securing your workspace...
+        </div>
+      </div>
+    </main>
+  );
+}
 
-  const fetchUserRole = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUserRole(data.user.role);
-      }
-    } catch (error) {
-      console.error('Failed to fetch user role:', error);
-    }
-  };
+function AdminOnly({ isAdmin, children }: { isAdmin: boolean; children: ReactNode }) {
+  return isAdmin ? children : <Navigate to="/" replace />;
+}
 
-  const path = location.pathname;
-  const isPublicLegalRoute = path === '/privacy-policy' || path === '/eula';
-  const search = new URLSearchParams(location.search);
-  const dashboardMode = search.get('view') === 'transactions-all' ? 'all' : 'recent';
-  const currentView = path.startsWith('/clients')
-    ? 'clients'
-    : path.startsWith('/suppliers')
-    ? 'suppliers'
-    : path.startsWith('/employees')
-    ? 'employees'
-    : path.startsWith('/quickbooks')
-    ? 'quickbooks'
-    : path.startsWith('/transactions/')
-    ? 'transaction-detail'
-    : 'dashboard';
-
-  const handleSidebarNavigate = (view: "dashboard" | "transaction-detail" | "clients" | "suppliers" | "employees" | "quickbooks") => {
-    switch (view) {
-      case 'dashboard':
-        navigate('/');
-        break;
-      case 'clients':
-        navigate('/clients');
-        break;
-      case 'suppliers':
-        navigate('/suppliers');
-        break;
-      case 'employees':
-        navigate('/employees');
-        break;
-      case 'quickbooks':
-        navigate('/quickbooks');
-        break;
-      default:
-        navigate('/');
-    }
-  };
-
-  const Dashboard = () => (
-    <div className="p-8 space-y-8">
-      <KPICards mode={dashboardMode as any} />
-
-      <div className="flex justify-end mb-6">
-        <Button
-          onClick={() => setIsModalOpen(true)}
-          className="text-white transition-all duration-200 border shadow-lg bg-teal-600/90 hover:bg-teal-700 backdrop-blur-sm border-teal-500/30 hover:shadow-xl hover:scale-105"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          New Transaction
+function Dashboard({ mode, onCreate }: { mode: "recent" | "all"; onCreate: () => void }) {
+  return (
+    <div className="mx-auto w-full max-w-[96rem] space-y-6 p-4 sm:p-6 lg:p-8">
+      <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Operations</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Transactions</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Monitor orders from request through delivery and invoicing.</p>
+        </div>
+        <Button type="button" onClick={onCreate}>
+          <Plus aria-hidden="true" />
+          New transaction
         </Button>
       </div>
 
-      <TransactionsTable mode={dashboardMode as any} />
+      <KPICards mode={mode} />
+      <TransactionsTable mode={mode} />
     </div>
   );
+}
+
+export default function App() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
+  const mobileNavigationButtonRef = useRef<HTMLButtonElement>(null);
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const path = location.pathname;
+  const isPublicLegalRoute = path === "/privacy-policy" || path === "/eula";
 
   if (isPublicLegalRoute) {
-    return <LegalPage kind={path === '/privacy-policy' ? 'privacy' : 'eula'} />;
+    return <LegalPage kind={path === "/privacy-policy" ? "privacy" : "eula"} />;
   }
 
-  if (!token) {
-    return <LoginPage onSuccess={() => window.location.reload()} />;
+  if (path === "/quickbooks/disconnected") {
+    return <QuickBooksDisconnectedPage />;
   }
+
+  if (isLoading) return <SessionLoading />;
+  if (!isAuthenticated || !user) return <LoginPage />;
+
+  if (user.must_change_password && path !== "/profile") {
+    return <Navigate to="/profile" replace />;
+  }
+
+  const search = new URLSearchParams(location.search);
+  const dashboardMode: "recent" | "all" = search.get("view") === "transactions-all" ? "all" : "recent";
+  const currentView: SidebarView = path.startsWith("/clients")
+    ? "clients"
+    : path.startsWith("/suppliers")
+      ? "suppliers"
+      : path.startsWith("/employees")
+        ? "employees"
+        : path.startsWith("/quickbooks")
+          ? "quickbooks"
+          : path.startsWith("/transactions/")
+            ? "transaction-detail"
+            : "dashboard";
+
+  const handleSidebarNavigate = (view: SidebarView) => {
+    const destinations: Partial<Record<SidebarView, string>> = {
+      dashboard: "/",
+      clients: "/clients",
+      suppliers: "/suppliers",
+      employees: "/employees",
+      quickbooks: "/quickbooks",
+    };
+    setIsMobileNavigationOpen(false);
+    navigate(destinations[view] || "/");
+  };
+
+  if (user.must_change_password) {
+    return (
+      <div className="flex min-h-screen flex-col bg-background text-foreground">
+        <Header />
+        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+          <Suspense fallback={<PageLoading />}>
+            <ProfilePage />
+          </Suspense>
+        </main>
+        <Toaster />
+      </div>
+    );
+  }
+
+  const isAdmin = user.role === "admin";
 
   return (
-    <div className="relative flex flex-col h-screen overflow-hidden font-sans">
-      <div className="fixed inset-0 z-0">
-        <div className="absolute top-0 bg-gray-200 rounded-full -left-4 w-72 h-72 mix-blend-multiply filter blur-xl opacity-40 animate-blob"></div>
-        <div className="absolute top-0 bg-gray-300 rounded-full -right-4 w-72 h-72 mix-blend-multiply filter blur-xl opacity-30 animate-blob animation-delay-2000"></div>
-        <div className="absolute bg-gray-400 rounded-full -bottom-8 left-20 w-72 h-72 mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
-      </div>
-
-      <div className="relative z-10 flex flex-col h-full">
-        <Header />
-
-        <div className="flex flex-1 overflow-hidden">
-          <Sidebar currentView={currentView as any} onViewChange={handleSidebarNavigate as any} userRole={userRole} />
-
-          <main className="flex-1 overflow-auto">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/transactions/:id" element={<div className="p-8"><TransactionDetail onBack={() => navigate('/')} /></div>} />
-              <Route path="/clients" element={<div className="p-8"><ClientsPage /></div>} />
-              <Route path="/suppliers" element={<div className="p-8"><SuppliersPage /></div>} />
-              <Route path="/employees" element={<div className="p-8"><EmployeesPage /></div>} />
-              <Route path="/quickbooks" element={<div className="p-8"><QuickBooksSettingsPage userRole={userRole} /></div>} />
-              <Route path="/profile" element={<div className="p-8"><ProfilePage /></div>} />
-              <Route path="/privacy-policy" element={<LegalPage kind="privacy" />} />
-              <Route path="/eula" element={<LegalPage kind="eula" />} />
-            </Routes>
-          </main>
-        </div>
-      </div>
-
-      <CreateTransactionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSubmit={({ createdId }) => {
-          setIsModalOpen(false);
-          navigate(`/transactions/${createdId}`);
-        }}
+    <div className="flex h-dvh min-h-screen flex-col overflow-hidden bg-background text-foreground">
+      <Header
+        navigationButtonRef={mobileNavigationButtonRef}
+        onOpenNavigation={() => setIsMobileNavigationOpen(true)}
       />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar
+          currentView={currentView}
+          onViewChange={handleSidebarNavigate}
+          userRole={user.role}
+          mobileOpen={isMobileNavigationOpen}
+          onMobileOpenChange={setIsMobileNavigationOpen}
+          mobileTriggerRef={mobileNavigationButtonRef}
+        />
+
+        <main className="min-w-0 flex-1 overflow-y-auto bg-background">
+          <Suspense fallback={<PageLoading />}>
+            <Routes>
+              <Route path="/" element={<Dashboard mode={dashboardMode} onCreate={() => setIsModalOpen(true)} />} />
+              <Route path="/transactions/:id" element={<div className="p-4 sm:p-6 lg:p-8"><TransactionDetail onBack={() => navigate("/")} /></div>} />
+              <Route path="/clients" element={<div className="p-4 sm:p-6 lg:p-8"><ClientsPage /></div>} />
+              <Route path="/suppliers" element={<div className="p-4 sm:p-6 lg:p-8"><SuppliersPage /></div>} />
+              <Route path="/employees" element={<AdminOnly isAdmin={isAdmin}><div className="p-4 sm:p-6 lg:p-8"><EmployeesPage /></div></AdminOnly>} />
+              <Route path="/quickbooks" element={<AdminOnly isAdmin={isAdmin}><div className="p-4 sm:p-6 lg:p-8"><QuickBooksSettingsPage userRole={user.role} /></div></AdminOnly>} />
+              <Route path="/profile" element={<div className="p-4 sm:p-6 lg:p-8"><ProfilePage /></div>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </main>
+      </div>
+
+      {isModalOpen && (
+        <Suspense fallback={null}>
+          <CreateTransactionModal
+            isOpen
+            onClose={() => setIsModalOpen(false)}
+            onSubmit={({ createdId }) => {
+              setIsModalOpen(false);
+              navigate(`/transactions/${createdId}`);
+            }}
+          />
+        </Suspense>
+      )}
 
       <Toaster />
     </div>

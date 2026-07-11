@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from typing import Dict, Optional
@@ -14,8 +15,6 @@ from sqlalchemy.orm import Session
 # Local imports
 from database import db_session
 from models import Client, Supplier, Transaction
-
-EXCEL_PATH = Path("/Users/kwabenaappiah/IDCEDATABASE/past_data.xlsx")
 
 CLIENT_COL = "LOCATION"
 SUPPLIER_COL = "OEM/SUPPLIER"
@@ -61,11 +60,15 @@ def get_or_create_supplier(session: Session, name: str) -> int:
 
 
 def migrate():
-	if not EXCEL_PATH.exists():
-		raise SystemExit(f"Excel file not found: {EXCEL_PATH}")
+	configured_path = os.getenv("PAST_DATA_PATH")
+	if not configured_path:
+		raise SystemExit("Set PAST_DATA_PATH to the private workbook before running this importer.")
+	excel_path = Path(configured_path).expanduser().resolve()
+	if not excel_path.is_file():
+		raise SystemExit(f"Excel file not found: {excel_path}")
 
 	print("Reading spreadsheet data...")
-	df = pd.read_excel(EXCEL_PATH)
+	df = pd.read_excel(excel_path)
 	print(f"Rows loaded: {len(df)}")
 
 	inserted_count = 0
@@ -127,4 +130,4 @@ if __name__ == "__main__":
 		migrate()
 	except Exception as e:
 		print(f"Migration failed: {e}")
-		raise 
+		raise

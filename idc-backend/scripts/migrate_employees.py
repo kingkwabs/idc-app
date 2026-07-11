@@ -1,64 +1,53 @@
-"""
-Migration script to create employees table and seed an initial admin user.
-"""
+"""Explicit one-time initial-admin bootstrap with no default credentials."""
+
 import os
 import sys
-from datetime import datetime
-from sqlalchemy import create_engine, Table, Column, Integer, String, DateTime, MetaData
-from sqlalchemy.exc import ProgrammingError
-import bcrypt
+from pathlib import Path
 
-# Use the same DB connection logic as in database.py
-DB_URI = os.getenv("MIGRATION_DB_URI") or os.getenv("DATABASE_URL")
-if not DB_URI:
-    print("Set MIGRATION_DB_URI or DATABASE_URL to your DB connection string.")
-    sys.exit(1)
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+	sys.path.insert(0, str(ROOT_DIR))
 
-engine = create_engine(DB_URI)
-metadata = MetaData()
+from sqlalchemy import func
+from sqlalchemy.orm import sessionmaker
 
-employees = Table(
-    "employees",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("name", String, nullable=False),
-    Column("email", String, unique=True, nullable=False),
-    Column("password_hash", String, nullable=False),
-    Column("role", String, nullable=False),
-    Column("created_at", DateTime, default=datetime.utcnow),
-    # Placeholders for future QuickBooks/payroll/invoice fields
-    Column("quickbooks_employee_id", String, nullable=True),
-    Column("payroll_info", String, nullable=True),
-    Column("invoice_mapping", String, nullable=True),
-)
+from auth_util import hash_password, normalize_email, password_policy_errors, utcnow
+from database import get_engine
+from models import Employee
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
-def main():
-    metadata.create_all(engine, tables=[employees])
-    conn = engine.connect()
-    # Seed admin user if not exists
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
-    admin_password = os.getenv("ADMIN_PASSWORD", "adminpass123")
-    admin_name = os.getenv("ADMIN_NAME", "Admin User")
-    admin_role = "admin"
-    result = conn.execute(employees.select().where(employees.c.email == admin_email)).fetchone()
-    if not result:
-        pw_hash = hash_password(admin_password)
-        conn.execute(
-            employees.insert().values(
-                name=admin_name,
-                email=admin_email,
-                password_hash=pw_hash,
-                role=admin_role,
-                created_at=datetime.utcnow(),
-            )
-        )
-        print(f"Seeded admin user: {admin_email}")
-    else:
-        print(f"Admin user already exists: {admin_email}")
-    conn.close()
+def main() -> None:
+	name = (os.getenv("ADMIN_NAME") or "").strip()
+	email = normalize_email(os.getenv("ADMIN_EMAIL") or "")
+	password = os.getenv("ADMIN_PASSWORD") or ""
+	if not name or not email or not password:
+		raise RuntimeError(
+			"ADMIN_NAME, ADMIN_EMAIL, and ADMIN_PASSWORD are required; no defaults are provided."
+		)
+	password_errors = password_policy_errors(password, email)
+	if password_errors:
+		raise RuntimeError("Initial admin password rejected: " + " ".join(password_errors))
+
+	session_factory = sessionmaker(bind=get_engine(), autoflush=False)
+	with session_factory.begin() as session:
+		existing = session.query(Employee).filter(func.lower(Employee.email) == email).first()
+		if existing:
+			print(f"Admin bootstrap skipped: account already exists for {email}")
+			return
+		now = utcnow()
+		session.add(Employee(
+			name=name,
+			email=email,
+			password_hash=hash_password(password),
+			role="admin",
+			is_active=True,
+			must_change_password=True,
+			created_at=now,
+			updated_at=now,
+			password_changed_at=now,
+		))
+	print(f"Initial admin created for {email}; password change required on first login.")
+
 
 if __name__ == "__main__":
-    main()
+	main()

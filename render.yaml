@@ -3,10 +3,24 @@ services:
     name: idc-backend
     env: python
     rootDir: idc-backend
-    buildCommand: pip install -r requirements-runtime.txt
-    startCommand: gunicorn app:app -b 0.0.0.0:$PORT
+    buildCommand: pip install -r requirements-runtime.txt && mkdir -p certs && curl --proto '=https' --tlsv1.2 -fsS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o certs/rds-global-bundle.pem
+    startCommand: python scripts/ddl_upgrade.py && gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 4 --timeout 120 --access-logfile -
     healthCheckPath: /health
     envVars:
+      - key: APP_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://www.idcenergy.co
+      - key: CORS_ORIGINS
+        value: https://www.idcenergy.co,https://idcenergy.co
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: AUTH_SESSION_HOURS
+        value: "12"
+      - key: MAX_REQUEST_BYTES
+        value: "12582912"
+      - key: MAX_DOCUMENT_BYTES
+        value: "8388608"
       - key: DB_SECRET_NAME
         sync: false
       - key: DB_CLUSTER_ARN
@@ -17,9 +31,27 @@ services:
         sync: false
       - key: AWS_SECRET_ACCESS_KEY
         sync: false
+      - key: DB_SSLMODE
+        value: verify-full
+      - key: DB_SSLROOTCERT
+        value: certs/rds-global-bundle.pem
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "5"
+      - key: DB_POOL_RECYCLE_SECONDS
+        value: "300"
       - key: JWT_SECRET
         sync: false
-      - key: APP_USER
+      - key: QB_CLIENT_ID
         sync: false
-      - key: APP_PASS
+      - key: QB_CLIENT_SECRET
         sync: false
+      - key: QB_REDIRECT_URI
+        value: https://idc-app.onrender.com/quickbooks/callback
+      - key: QB_ENVIRONMENT
+        value: production
+      - key: QB_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: QB_SERVICE_ITEM_NAME
+        value: Services

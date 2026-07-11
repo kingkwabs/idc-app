@@ -1,15 +1,17 @@
 import { useMemo } from "react";
-import { MoreHorizontal } from "lucide-react";
-import { Button } from "./ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
-import type { SupplierMetricOut } from "../lib/api";
+import { AlertCircle, Truck } from "lucide-react";
 
-type Row = { id: number; name: string; quotes: number; lastQuoted?: string };
+import type { SupplierMetricOut } from "../lib/api";
+import { Badge } from "./ui/badge";
+import { Skeleton } from "./ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+
+type Row = {
+  id: number;
+  name: string;
+  quotes: number;
+  lastQuoted?: string;
+};
 
 interface SuppliersTableProps {
   suppliers: SupplierMetricOut[];
@@ -17,61 +19,103 @@ interface SuppliersTableProps {
   error: string | null;
 }
 
+const dateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+function supplierCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "supplier" : "suppliers"}`;
+}
+
+function formatDate(value?: string): string {
+  if (!value) return "Not yet quoted";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return dateFormatter.format(date);
+}
+
 export function SuppliersTable({ suppliers, loading, error }: SuppliersTableProps) {
   const rows = useMemo<Row[]>(
-    () => suppliers.map(s => ({
-        id: s.id,
-        name: s.name,
-        quotes: s.quotes,
-        lastQuoted: s.last_quoted ?? undefined,
-      })),
-    [suppliers]
+    () => suppliers.map((supplier) => ({
+      id: supplier.id,
+      name: supplier.name,
+      quotes: supplier.quotes,
+      lastQuoted: supplier.last_quoted ?? undefined,
+    })),
+    [suppliers],
   );
 
   return (
-    <div className="overflow-hidden rounded-lg glass-table">
-      <div className="px-6 py-4 border-b bg-gray-50/80 border-gray-200/50 flex items-center justify-between">
-        <h2 className="text-lg font-medium text-gray-900">Supplier List</h2>
-        <div className="text-sm text-gray-500">{loading ? 'Loading…' : `${rows.length} suppliers`}</div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50/60">
-            <tr>
-              <th className="px-6 py-4 text-xs font-medium tracking-wider text-left text-gray-500 uppercase">Supplier Name</th>
-              <th className="px-6 py-4 text-xs font-medium tracking-wider text-left text-gray-500 uppercase">Quotes</th>
-              <th className="px-6 py-4 text-xs font-medium tracking-wider text-left text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y bg-white/90 divide-gray-200/50">
-            {error && (<tr><td colSpan={3} className="px-6 py-4 text-red-600">{error}</td></tr>)}
-            {!error && loading && (<tr><td colSpan={3} className="px-6 py-4 text-gray-500">Loading…</td></tr>)}
-            {!error && !loading && rows.length === 0 && (<tr><td colSpan={3} className="px-6 py-4 text-gray-500">No suppliers.</td></tr>)}
-            {rows.map((s) => (
-              <tr key={s.id} className="transition-colors duration-200 hover:bg-gray-50/50">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">{s.name}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="text-sm text-gray-900">{s.quotes}</span>
-                </td>
-                <td className="px-6 py-4 text-right whitespace-nowrap">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="w-8 h-8 p-0 hover:bg-gray-100">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="glass-card">
-                      <DropdownMenuItem className="cursor-pointer">View Linked Transactions</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <section aria-labelledby="supplier-list-title" aria-busy={loading} className="overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)]">
+      <header className="flex flex-col gap-1 border-b bg-secondary px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div>
+          <h2 id="supplier-list-title" className="text-base font-semibold tracking-tight text-foreground">Supplier register</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">Sourcing activity and most recent quote by supplier.</p>
+        </div>
+        <p className="text-sm font-medium text-muted-foreground" aria-live="polite">
+          {loading ? "Loading records" : error ? "Records unavailable" : supplierCountLabel(rows.length)}
+        </p>
+      </header>
+
+      <Table className="min-w-[38rem]">
+        <caption className="sr-only">Suppliers with quote counts and latest quote dates.</caption>
+        <TableHeader>
+          <TableRow>
+            <TableHead scope="col">Supplier</TableHead>
+            <TableHead scope="col" className="text-right">Quotes</TableHead>
+            <TableHead scope="col" className="text-right">Latest quote</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {error ? (
+            <TableRow className="hover:bg-card">
+              <TableCell colSpan={3}>
+                <div role="alert" className="flex items-start gap-3 py-5 text-destructive">
+                  <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                  <div>
+                    <p className="font-medium">Supplier records could not be loaded</p>
+                    <p className="mt-1 whitespace-normal text-sm text-muted-foreground">{error}</p>
+                  </div>
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : loading ? (
+            Array.from({ length: 4 }, (_, index) => (
+              <TableRow key={index} className="hover:bg-card">
+                <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                <TableCell><Skeleton className="ml-auto h-5 w-10" /></TableCell>
+                <TableCell><Skeleton className="ml-auto h-4 w-24" /></TableCell>
+              </TableRow>
+            ))
+          ) : rows.length === 0 ? (
+            <TableRow className="hover:bg-card">
+              <TableCell colSpan={3}>
+                <div className="flex flex-col items-center px-4 py-10 text-center">
+                  <span className="flex size-10 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+                    <Truck aria-hidden="true" className="size-5" />
+                  </span>
+                  <p className="mt-3 font-medium text-foreground">No suppliers yet</p>
+                  <p className="mt-1 max-w-md whitespace-normal text-sm text-muted-foreground">Add a supplier to begin recording quotes and sourcing activity.</p>
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((supplier) => (
+              <TableRow key={supplier.id}>
+                <TableCell className="max-w-[24rem] whitespace-normal font-medium">{supplier.name}</TableCell>
+                <TableCell className="text-right">
+                  <Badge variant="secondary" data-numeric="true">{supplier.quotes}</Badge>
+                </TableCell>
+                <TableCell className="text-right text-muted-foreground">
+                  {supplier.lastQuoted ? <time dateTime={supplier.lastQuoted}>{formatDate(supplier.lastQuoted)}</time> : formatDate()}
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </section>
   );
 }

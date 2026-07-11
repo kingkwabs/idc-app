@@ -1,154 +1,156 @@
-import React, { useState } from "react";
-import { Calendar, Check, Truck } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { Info, LoaderCircle, Truck } from "lucide-react";
 import { toast } from "sonner";
+
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
+interface ShipmentData {
+  leadTime: string;
+  trackingNumber: string;
+  shippedDate: string;
+  etaDate: string;
+}
+
 interface ShipmentTabProps {
-  onShipmentConfirmed: (data: { leadTime?: string; trackingNumber?: string; shippedDate?: string; etaDate?: string }) => void;
+  onShipmentConfirmed: (data: Partial<ShipmentData>) => void | Promise<void>;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Shipment could not be confirmed. Try again.";
 }
 
 export function ShipmentTab({ onShipmentConfirmed }: ShipmentTabProps) {
-  const [shipmentData, setShipmentData] = useState({
+  const [shipmentData, setShipmentData] = useState<ShipmentData>({
     leadTime: "",
     trackingNumber: "",
     shippedDate: "",
     etaDate: "",
   });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleInputChange = (field: string, value: string) => {
-    setShipmentData(prev => ({ ...prev, [field]: value }));
+  const handleInputChange = (field: keyof ShipmentData, value: string) => {
+    setShipmentData((current) => ({ ...current, [field]: value }));
+    if (error) setError(null);
   };
 
-  const handleConfirmShipment = () => {
-    onShipmentConfirmed({
-      leadTime: shipmentData.leadTime,
-      trackingNumber: shipmentData.trackingNumber,
-      shippedDate: shipmentData.shippedDate,
-      etaDate: shipmentData.etaDate,
-    });
-    toast.success("Shipment confirmed successfully!", {
-      description: "Progress automatically advanced to 'Shipped' status.",
-    });
+  const handleConfirmShipment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (shipmentData.leadTime) {
+      const leadTime = Number(shipmentData.leadTime);
+      if (!Number.isInteger(leadTime) || leadTime < 0) {
+        setError("Lead time must be a whole number of days or left blank.");
+        return;
+      }
+    }
+
+    if (shipmentData.shippedDate && shipmentData.etaDate && shipmentData.etaDate < shipmentData.shippedDate) {
+      setError("ETA date cannot be earlier than the shipped date.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      await onShipmentConfirmed({ ...shipmentData });
+      toast.success("Shipment confirmed", {
+        description: "The transaction moved to shipment, clearance, and delivery.",
+      });
+    } catch (submitError: unknown) {
+      const message = errorMessage(submitError);
+      setError(message);
+      toast.error("Shipment was not confirmed", { description: message });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h2 className="text-xl font-medium text-gray-900 mb-2">Shipment Details</h2>
-        <p className="text-gray-600">Manage and track shipment information for this transaction.</p>
-      </div>
+    <form onSubmit={handleConfirmShipment} className="space-y-6" aria-busy={submitting}>
+      <header className="border-b pb-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Logistics</p>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Confirm shipment</h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Record the available carrier details before advancing this transaction.</p>
+      </header>
 
-      {/* Form Fields */}
-      <div className="glass-card rounded-lg p-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Lead Time */}
+      <section aria-labelledby="shipment-fields-title" className="overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)]">
+        <div className="border-b bg-secondary px-5 py-4">
+          <h3 id="shipment-fields-title" className="text-base font-semibold text-foreground">Carrier details</h3>
+          <p className="mt-0.5 text-sm text-muted-foreground">Fields can be left blank when the carrier has not provided them.</p>
+        </div>
+
+        <fieldset disabled={submitting} className="grid grid-cols-1 gap-5 p-5 sm:p-6 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="leadTime" className="text-gray-700">
-              Lead Time (days)
-            </Label>
+            <Label htmlFor="leadTime">Lead time</Label>
             <Input
               id="leadTime"
               type="number"
-              placeholder="Enter lead time in days"
+              min="0"
+              step="1"
+              inputMode="numeric"
+              placeholder="Days"
               value={shipmentData.leadTime}
-              onChange={(e) => handleInputChange("leadTime", e.target.value)}
-              className="glass border-white/20 bg-white/50 backdrop-blur-sm focus:bg-white/80 transition-all duration-200"
+              onChange={(event) => handleInputChange("leadTime", event.target.value)}
+              aria-describedby="lead-time-help"
             />
+            <p id="lead-time-help" className="text-xs text-muted-foreground">Whole calendar days.</p>
           </div>
 
-          {/* Tracking Number */}
           <div className="space-y-2">
-            <Label htmlFor="trackingNumber" className="text-gray-700">
-              Tracking Number
-            </Label>
+            <Label htmlFor="trackingNumber">Tracking number</Label>
             <Input
               id="trackingNumber"
               type="text"
-              placeholder="Enter tracking number"
+              autoComplete="off"
+              placeholder="Carrier reference"
               value={shipmentData.trackingNumber}
-              onChange={(e) => handleInputChange("trackingNumber", e.target.value)}
-              className="glass border-white/20 bg-white/50 backdrop-blur-sm focus:bg-white/80 transition-all duration-200"
+              onChange={(event) => handleInputChange("trackingNumber", event.target.value)}
             />
           </div>
 
-          {/* Shipped Date */}
           <div className="space-y-2">
-            <Label htmlFor="shippedDate" className="text-gray-700">
-              Shipped Date
-            </Label>
-            <div className="relative">
-              <Input
-                id="shippedDate"
-                type="date"
-                value={shipmentData.shippedDate}
-                onChange={(e) => handleInputChange("shippedDate", e.target.value)}
-                className="glass border-white/20 bg-white/50 backdrop-blur-sm focus:bg-white/80 transition-all duration-200 pr-10"
-              />
-              <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
-            </div>
+            <Label htmlFor="shippedDate">Shipped date</Label>
+            <Input
+              id="shippedDate"
+              type="date"
+              value={shipmentData.shippedDate}
+              onChange={(event) => handleInputChange("shippedDate", event.target.value)}
+            />
           </div>
 
-          {/* ETA Date */}
           <div className="space-y-2">
-            <Label htmlFor="etaDate" className="text-gray-700">
-              ETA Date
-            </Label>
-            <div className="relative">
-              <Input
-                id="etaDate"
-                type="date"
-                value={shipmentData.etaDate}
-                onChange={(e) => handleInputChange("etaDate", e.target.value)}
-                className="glass border-white/20 bg-white/50 backdrop-blur-sm focus:bg-white/80 transition-all duration-200 pr-10"
-              />
-              <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
-            </div>
+            <Label htmlFor="etaDate">Estimated arrival</Label>
+            <Input
+              id="etaDate"
+              type="date"
+              min={shipmentData.shippedDate || undefined}
+              value={shipmentData.etaDate}
+              onChange={(event) => handleInputChange("etaDate", event.target.value)}
+            />
           </div>
-        </div>
+        </fieldset>
 
-        {/* Additional Information Section */}
-        <div className="border-t border-white/20 pt-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Shipment Status</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-white/30 backdrop-blur-sm rounded-lg border border-white/20">
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                <span className="text-sm font-medium text-gray-700">Processing</span>
-              </div>
-              <p className="text-xs text-gray-600 mt-1">Order is being prepared</p>
-            </div>
-            <div className="p-4 bg-white/30 backdrop-blur-sm rounded-lg border border-white/20">
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                <span className="text-sm font-medium text-gray-700">In Transit</span>
-              </div>
-              <p className="text-xs text-gray-600 mt-1">Package is on the way</p>
-            </div>
-            <div className="p-4 bg-white/30 backdrop-blur-sm rounded-lg border border-white/20">
-              <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                <span className="text-sm font-medium text-gray-700">Delivered</span>
-              </div>
-              <p className="text-xs text-gray-600 mt-1">Package has arrived</p>
-            </div>
-          </div>
+        <div className="flex items-start gap-3 border-t bg-[var(--color-warning-soft)] px-5 py-4 text-[var(--color-warning-foreground)]">
+          <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <p className="max-w-3xl text-sm">Confirming saves these details and moves the transaction to shipment, clearance, and delivery. This does not mark the shipment as delivered.</p>
         </div>
-      </div>
+      </section>
 
-      {/* Primary Action Button */}
-      <div className="flex justify-center pt-4">
-        <Button
-          onClick={handleConfirmShipment}
-          className="bg-teal-600 hover:bg-teal-700 text-white px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 backdrop-blur-sm border border-teal-500/30"
-          size="lg"
-        >
-          <Truck className="h-5 w-5 mr-2" />
-          Confirm Shipment
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        {error ? (
+          <p role="alert" className="flex-1 text-sm font-medium text-destructive">{error}</p>
+        ) : (
+          <p className="flex-1 text-sm text-muted-foreground">Review the dates and tracking reference before confirming.</p>
+        )}
+        <Button type="submit" size="lg" disabled={submitting}>
+          {submitting ? <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : <Truck aria-hidden="true" />}
+          {submitting ? "Confirming shipment" : "Confirm shipment"}
         </Button>
       </div>
-    </div>
+    </form>
   );
 }

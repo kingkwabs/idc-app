@@ -1,20 +1,22 @@
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { Button } from "./ui/button";
+import { toast } from "sonner";
+
+import {
+  createSupplier,
+  fetchSupplierMetrics,
+  fetchSupplierSummary,
+  type SupplierCreate,
+  type SupplierMetricOut,
+  type SupplierSummary,
+} from "../lib/api";
+import { CreateSupplierModal } from "./CreateSupplierModal";
 import { SupplierKPICards } from "./SupplierKPICards";
 import { SuppliersTable } from "./SuppliersTable";
-import { CreateSupplierModal } from "./CreateSupplierModal";
-import { fetchSupplierMetrics, fetchSupplierSummary, type SupplierMetricOut, type SupplierSummary } from "../lib/api";
+import { Button } from "./ui/button";
 
-interface SupplierFormData {
-  companyName: string;
-  contactName: string;
-  email: string;
-  phone: string;
-  website: string;
-  address: string;
-  category: string;
-  notes: string;
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Failed to load suppliers";
 }
 
 export function SuppliersPage() {
@@ -26,56 +28,57 @@ export function SuppliersPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [summaryRes, metricsRes] = await Promise.all([
-          fetchSupplierSummary(),
-          fetchSupplierMetrics(),
-        ]);
+
+    void Promise.all([fetchSupplierSummary(), fetchSupplierMetrics()])
+      .then(([summaryResponse, metricsResponse]) => {
         if (cancelled) return;
-        setSummary(summaryRes);
-        setSuppliers(metricsRes.items);
-      } catch (e: any) {
+        setSummary(summaryResponse);
+        setSuppliers(metricsResponse.items);
+      })
+      .catch((loadError: unknown) => {
         if (cancelled) return;
-        setError(e?.message || "Failed to load suppliers");
+        setError(errorMessage(loadError));
         setSummary(null);
         setSuppliers([]);
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const handleCreateSupplier = (data: SupplierFormData) => {
-    console.log("Creating supplier:", data);
-    // Here you would typically send the data to your backend
-    // For now, we'll just log it and close the modal
+  const handleCreateSupplier = async (payload: SupplierCreate) => {
+    const created = await createSupplier(payload);
+    setSuppliers((current) =>
+      [
+        ...current,
+        { id: created.id, name: created.name, quotes: 0, last_quoted: null },
+      ].sort((left, right) => left.name.localeCompare(right.name)),
+    );
+    setSummary((current) => current ? { ...current, total_suppliers: current.total_suppliers + 1 } : current);
+    toast.success(`${created.name} was added`);
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header Section */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">Suppliers</h1>
-        <Button 
-          onClick={() => setIsModalOpen(true)}
-          className="text-white transition-all duration-200 border shadow-lg bg-teal-600/90 hover:bg-teal-700 backdrop-blur-sm border-teal-500/30 hover:shadow-xl hover:scale-105"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add New Supplier
+    <div className="mx-auto w-full max-w-[96rem] space-y-6">
+      <header className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Procurement network</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Suppliers</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Maintain vendor records and compare sourcing activity.</p>
+        </div>
+        <Button type="button" onClick={() => setIsModalOpen(true)}>
+          <Plus aria-hidden="true" />
+          Add supplier
         </Button>
-      </div>
+      </header>
 
-      {/* KPI Cards Section */}
       <SupplierKPICards summary={summary} loading={loading} />
-
-      {/* Suppliers Table Section */}
       <SuppliersTable suppliers={suppliers} loading={loading} error={error} />
 
-      {/* Create Supplier Modal */}
       <CreateSupplierModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

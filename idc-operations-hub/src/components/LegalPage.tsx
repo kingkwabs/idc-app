@@ -9,7 +9,7 @@ interface LegalSection {
   body: string[];
 }
 
-const lastUpdated = "June 12, 2026";
+const lastUpdated = "July 10, 2026";
 const contactEmail = "admin@idcenergy.com";
 
 const privacySections: LegalSection[] = [
@@ -25,7 +25,7 @@ const privacySections: LegalSection[] = [
     body: [
       "Account information, such as employee name, email address, role, hashed password, and authentication metadata.",
       "Business operations data, such as client names, supplier names, transaction records, RFQ numbers, purchase order numbers, item descriptions, quote amounts, associated costs, shipment details, activity logs, and uploaded business documents.",
-      "QuickBooks integration data, such as QuickBooks company identifiers, OAuth tokens, customer identifiers, invoice identifiers, invoice numbers, invoice totals, and invoice-related transaction details required to create or reconcile invoices.",
+      "QuickBooks integration data, such as encrypted OAuth credentials, one-way company fingerprints, customer identifiers, invoice identifiers, invoice numbers, invoice totals, and invoice-related transaction details required to create or reconcile invoices.",
       "Technical information, such as request metadata, error logs, and operational diagnostics used to secure and maintain the application.",
     ],
   },
@@ -42,8 +42,8 @@ const privacySections: LegalSection[] = [
     title: "4. QuickBooks Data",
     body: [
       "The application accesses QuickBooks data only after an authorized administrator connects the application to a QuickBooks company through Intuit's OAuth authorization process.",
-      "QuickBooks access tokens and refresh tokens are stored to maintain the integration. These tokens are used only to perform authorized QuickBooks actions for IDC Energy business operations.",
-      "The application may send transaction, client, document, and invoice-related information to QuickBooks when creating or managing invoices. The application may store QuickBooks identifiers returned by QuickBooks so records can be reconciled later.",
+      "QuickBooks access and refresh credentials are encrypted at rest and used only to perform authorized QuickBooks actions for IDC Energy business operations.",
+      "The application may send client, transaction, and invoice-related information to QuickBooks when creating customers or invoices. Version 1 does not upload document attachments to QuickBooks. The application may store QuickBooks identifiers returned by QuickBooks so records can be reconciled later.",
     ],
   },
   {
@@ -57,7 +57,7 @@ const privacySections: LegalSection[] = [
   {
     title: "6. Data Security",
     body: [
-      "The application uses access controls, role-based permissions, hashed passwords, token-based authentication, and managed infrastructure controls to help protect information.",
+      "The application uses role-based access controls, Argon2id password hashing, revocable secure sessions, cross-site request forgery protection, encrypted QuickBooks credentials, and managed infrastructure controls to help protect information.",
       "No system can guarantee absolute security. Users must protect their login credentials and immediately report suspected unauthorized access.",
     ],
   },
@@ -116,7 +116,7 @@ const eulaSections: LegalSection[] = [
     title: "4. QuickBooks Integration",
     body: [
       "Administrators may authorize the application to connect to QuickBooks Online through Intuit's authorization process.",
-      "When connected, the application may create or update QuickBooks-related business records, including customers, invoices, invoice references, and related transaction information.",
+      "When connected, the application may create QuickBooks customers and invoices and store invoice references with related transaction information.",
       "Users are responsible for confirming that transaction, invoice, customer, and accounting information is accurate before using it for business, accounting, tax, or financial reporting purposes.",
     ],
   },
@@ -195,28 +195,30 @@ export function LegalPage({ kind }: { kind: LegalPageKind }) {
   const Icon = content.icon;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50 text-gray-900">
+    <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-4xl px-5 py-8 sm:px-8 sm:py-12">
         <div className="mb-8 flex items-center justify-between gap-4">
-          <Button asChild variant="outline" className="bg-white/80">
+          <Button asChild variant="outline">
             <Link to="/">
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft aria-hidden="true" />
               Back to app
             </Link>
           </Button>
-          <div className="text-right text-sm text-gray-500">
+          <div className="text-right text-sm text-muted-foreground">
             Last updated: {lastUpdated}
           </div>
         </div>
 
-        <section className="mb-10 border-b border-gray-200 pb-8">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-md bg-teal-600 text-white shadow-sm">
-            <Icon className="h-6 w-6" />
+        <section className="relative mb-10 overflow-hidden border-b border-border pb-8 pt-4">
+          <div aria-hidden="true" className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-primary via-[var(--idc-red)] to-[var(--idc-amber)]" />
+          <img src="/idce_logo.avif" alt="IDC Energy" className="mb-8 h-11 w-auto" />
+          <div className="mb-4 flex size-11 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <Icon aria-hidden="true" className="size-5" />
           </div>
-          <h1 className="text-3xl font-semibold tracking-normal text-gray-950 sm:text-4xl">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             {content.title}
           </h1>
-          <p className="mt-3 max-w-2xl text-base leading-7 text-gray-600">
+          <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
             {content.subtitle}
           </p>
         </section>
@@ -224,9 +226,9 @@ export function LegalPage({ kind }: { kind: LegalPageKind }) {
         <article className="space-y-8">
           {content.sections.map((section) => (
             <section key={section.title} className="space-y-3">
-              <h2 className="text-xl font-semibold text-gray-950">{section.title}</h2>
+              <h2 className="text-xl font-semibold text-foreground">{section.title}</h2>
               {section.body.map((paragraph) => (
-                <p key={paragraph} className="text-sm leading-7 text-gray-700 sm:text-base">
+                <p key={paragraph} className="text-sm leading-7 text-muted-foreground sm:text-base">
                   {paragraph}
                 </p>
               ))}

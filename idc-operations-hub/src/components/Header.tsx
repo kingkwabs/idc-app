@@ -1,7 +1,9 @@
-import { Search, User, LogOut, ChevronDown, UserCircle, FileText, ShieldCheck } from "lucide-react";
+import { useState, type Ref } from "react";
+import { ChevronDown, FileText, LoaderCircle, LogOut, Menu, ShieldCheck, User, UserCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
+import { useAuth } from "../lib/auth";
 import { Avatar, AvatarFallback } from "./ui/avatar";
-import { useState, useEffect } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,116 +13,113 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5001';
-
-interface UserInfo {
-  id: number;
-  name: string;
-  email: string;
-  role: string;
+function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 }
 
-export function Header() {
-  const [user, setUser] = useState<UserInfo | null>(null);
+export function Header({
+  navigationButtonRef,
+  onOpenNavigation,
+}: {
+  navigationButtonRef?: Ref<HTMLButtonElement>;
+  onOpenNavigation?: () => void;
+}) {
+  const { user, logout } = useAuth();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchUserInfo();
-  }, []);
-
-  const fetchUserInfo = async () => {
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
     try {
-      const token = localStorage.getItem('access_token');
-      if (!token) return;
-
-      const response = await fetch(`${API_BASE}/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data.user);
-      }
-    } catch (error) {
-      console.error('Failed to fetch user info:', error);
+      await logout();
+      navigate("/", { replace: true });
+    } finally {
+      setIsLoggingOut(false);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('access_token');
-    window.location.reload();
-  };
-
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 2);
-  };
-
   return (
-    <header className="h-16 glass-header flex items-center justify-between px-6 relative z-50">
-      <div className="flex items-center">
-        <img
-          src={"/idce_logo.avif"}
-          alt="IDC Energy"
-          className="h-10 w-auto"
-        />
-      </div>
-
-      <div className="flex items-center gap-4">
-        <button className="p-2 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm">
-          <Search className="h-5 w-5 text-gray-600" />
+    <header className="relative z-50 flex h-16 shrink-0 items-center justify-between border-b border-border bg-card/95 px-3 shadow-[var(--shadow-control)] backdrop-blur sm:px-6">
+      <div className="flex min-w-0 items-center gap-2">
+        {onOpenNavigation && (
+          <button
+            ref={navigationButtonRef}
+            type="button"
+            onClick={onOpenNavigation}
+            className="flex size-10 shrink-0 items-center justify-center rounded-md border border-transparent text-foreground outline-none transition-[background-color,border-color,box-shadow,transform] duration-150 [transition-timing-function:var(--ease-out-ui)] hover:border-border hover:bg-secondary active:scale-[0.97] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-[var(--color-ring-soft)] motion-reduce:transition-none motion-reduce:active:scale-100 lg:hidden"
+            aria-label="Open navigation"
+          >
+            <Menu aria-hidden="true" className="size-5" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => navigate("/")}
+          className="rounded-md outline-none transition-opacity duration-150 hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          aria-label="Go to transactions"
+        >
+          <img src="/idce_logo.avif" alt="IDC Energy" className="h-9 w-auto sm:h-10" />
         </button>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 hover:bg-white/20 rounded-md transition-all duration-200 backdrop-blur-sm p-2">
-              <Avatar className="h-8 w-8 ring-2 ring-white/20">
-                <AvatarFallback className="bg-teal-600 text-white text-xs font-semibold">
-                  {user ? getInitials(user.name) : <User className="h-4 w-4" />}
-                </AvatarFallback>
-              </Avatar>
-              {user && (
-                <div className="flex flex-col items-start">
-                  <span className="text-sm font-medium text-gray-700">{user.name}</span>
-                  <span className="text-xs text-gray-500 capitalize">{user.role}</span>
-                </div>
-              )}
-              <ChevronDown className="h-4 w-4 text-gray-600" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{user?.name}</p>
-                <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate('/profile')} className="cursor-pointer">
-              <UserCircle className="mr-2 h-4 w-4" />
-              <span>My Profile</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/privacy-policy')} className="cursor-pointer">
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              <span>Privacy Policy</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/eula')} className="cursor-pointer">
-              <FileText className="mr-2 h-4 w-4" />
-              <span>EULA</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleLogout} className="text-red-600 cursor-pointer">
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Log out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex min-w-0 items-center gap-2 rounded-md border border-transparent p-1.5 text-left outline-none transition-[background-color,border-color,box-shadow] duration-150 hover:border-border hover:bg-secondary focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-[var(--color-ring-soft)]"
+            aria-label="Open account menu"
+          >
+            <Avatar className="size-8 border border-border">
+              <AvatarFallback className="bg-foreground text-xs font-semibold text-background">
+                {user ? getInitials(user.name) : <User aria-hidden="true" className="size-4" />}
+              </AvatarFallback>
+            </Avatar>
+            {user && (
+              <div className="hidden min-w-0 flex-col sm:flex">
+                <span className="max-w-44 truncate text-sm font-medium text-foreground">{user.name}</span>
+                <span className="text-xs capitalize text-muted-foreground">{user.role}</span>
+              </div>
+            )}
+            <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel>
+            <div className="flex min-w-0 flex-col gap-1">
+              <p className="truncate text-sm font-medium leading-none">{user?.name}</p>
+              <p className="truncate text-xs font-normal leading-none text-muted-foreground">{user?.email}</p>
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => navigate("/profile")}>
+            <UserCircle aria-hidden="true" />
+            My profile
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate("/privacy-policy")}>
+            <ShieldCheck aria-hidden="true" />
+            Privacy policy
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate("/eula")}>
+            <FileText aria-hidden="true" />
+            EULA
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => void handleLogout()}
+            disabled={isLoggingOut}
+            className="text-destructive focus:text-destructive"
+          >
+            {isLoggingOut ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <LogOut aria-hidden="true" />}
+            {isLoggingOut ? "Signing out..." : "Sign out"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </header>
   );
 }

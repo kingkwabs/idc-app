@@ -1,9 +1,13 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5001";
+const configuredApiBase = import.meta.env.VITE_API_BASE?.trim();
 
-function authHeaders() {
-  const t = typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null;
-  return t ? { Authorization: `Bearer ${t}` } : {};
-}
+export const API_BASE = (
+  import.meta.env.DEV ? configuredApiBase || "http://localhost:5001" : "/api"
+).replace(/\/+$/, "");
+
+export const API_UNAUTHORIZED_EVENT = "idc:unauthorized";
+export const UNAUTHORIZED_EVENT = API_UNAUTHORIZED_EVENT;
+
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export interface TransactionOut {
   id: number;
@@ -20,6 +24,8 @@ export interface TransactionOut {
   client_quote_currency?: string | null;
   quickbooks_invoice_id?: string | null;
   quickbooks_invoice_number?: string | null;
+  quickbooks_invoice_status?: "not_created" | "pending" | "succeeded" | "unknown" | "failed" | null;
+  quickbooks_last_synced_at?: string | null;
   invoiced_at?: string | null;
 }
 
@@ -35,7 +41,23 @@ export type TransactionCreate = {
 export interface ClientOut {
   id: number;
   name: string;
+  contact_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  notes?: string | null;
 }
+
+export interface ClientCreate {
+  name: string;
+  contact_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  notes?: string | null;
+}
+
+export type ClientUpdate = Partial<ClientCreate>;
 
 export interface ClientMetricOut {
   id: number;
@@ -48,7 +70,27 @@ export interface ClientMetricOut {
 export interface SupplierOut {
   id: number;
   name: string;
+  contact_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  address?: string | null;
+  category?: string | null;
+  notes?: string | null;
 }
+
+export interface SupplierCreate {
+  name: string;
+  contact_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  address?: string | null;
+  category?: string | null;
+  notes?: string | null;
+}
+
+export type SupplierUpdate = Partial<SupplierCreate>;
 
 export interface SupplierMetricOut {
   id: number;
@@ -83,13 +125,12 @@ export interface AssociatedCostOut {
   id: number;
   description: string;
   amount: number;
-  status: 'paid' | 'due' | 'overdue';
+  status: "paid" | "due" | "overdue";
   created_at: string;
 }
 
 export interface QuickBooksStatus {
   connected: boolean;
-  realm_id?: string;
   token_expires_at?: string;
   refresh_expires_at?: string;
 }
@@ -102,13 +143,14 @@ export interface QuickBooksInvoicePayload {
   selected_quote_id?: number | null;
   billable_cost_ids?: number[];
   custom_notes?: string;
+  preview_hash?: string;
 }
 
 export interface QuickBooksInvoiceLineItem {
   description: string;
   amount: number;
   quantity: number;
-  source: 'client_billable_amount' | 'associated_cost';
+  source: "client_billable_amount" | "associated_cost";
   reference?: string;
   cost_id?: number;
   billable: boolean;
@@ -116,6 +158,8 @@ export interface QuickBooksInvoiceLineItem {
 
 export interface QuickBooksInvoicePreview {
   transaction_id: number;
+  currency: string;
+  preview_hash: string;
   can_create: boolean;
   already_invoiced: boolean;
   invoice_id?: string | null;
@@ -156,294 +200,424 @@ export interface QuickBooksInvoiceCreateResult {
 
 export interface ApiErrorPayload {
   error?: string;
-  details?: string;
+  details?: string | Array<string | { field?: string; message?: string }>;
   errors?: string[];
   warnings?: string[];
   invoice_number?: string;
   invoice_preview?: QuickBooksInvoicePreview;
 }
 
-async function readErrorPayload(res: Response): Promise<ApiErrorPayload> {
+export type EmployeeRole = "admin" | "employee";
+
+export interface Employee {
+  id: number;
+  name: string;
+  email: string;
+  role: EmployeeRole;
+  is_active: boolean;
+  must_change_password: boolean;
+  created_at: string;
+  updated_at: string | null;
+  last_login_at: string | null;
+}
+
+export interface UnauthorizedEventDetail {
+  path: string;
+  status: 401;
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly payload: ApiErrorPayload;
+
+  constructor(status: number, payload: ApiErrorPayload, fallbackMessage?: string) {
+    super(errorMessage(payload, fallbackMessage || `Request failed with status ${status}`));
+    this.name = "ApiError";
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function errorMessage(payload: unknown, fallbackMessage: string): string {
+  if (!isRecord(payload)) return fallbackMessage;
+
+  if (typeof payload.details === "string" && payload.details.trim()) {
+    return payload.details;
+  }
+
+  if (Array.isArray(payload.details)) {
+    const details = payload.details
+      .map((detail) => {
+        if (typeof detail === "string") return detail;
+        if (isRecord(detail) && typeof detail.message === "string") return detail.message;
+        return null;
+      })
+      .filter((detail): detail is string => Boolean(detail));
+    if (details.length > 0) return details.join(" ");
+  }
+
+  if (typeof payload.error === "string" && payload.error.trim()) {
+    return payload.error;
+  }
+
+  return fallbackMessage;
+}
+
+async function readErrorPayload(response: Response): Promise<ApiErrorPayload> {
   try {
-    const payload: unknown = await res.json();
-    return typeof payload === "object" && payload !== null
-      ? payload as ApiErrorPayload
-      : { error: `Request failed with status ${res.status}` };
+    const payload: unknown = await response.json();
+    return isRecord(payload)
+      ? (payload as ApiErrorPayload)
+      : { error: `Request failed with status ${response.status}` };
   } catch {
-    return { error: `Request failed with status ${res.status}` };
+    return { error: `Request failed with status ${response.status}` };
+  }
+}
+
+function readCookie(name: string): string | undefined {
+  if (typeof document === "undefined") return undefined;
+
+  const prefix = `${encodeURIComponent(name)}=`;
+  const entry = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix));
+
+  if (!entry) return undefined;
+  try {
+    return decodeURIComponent(entry.slice(prefix.length));
+  } catch {
+    return entry.slice(prefix.length);
+  }
+}
+
+function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE}/${path.replace(/^\/+/, "")}`;
+}
+
+export async function apiRequest<T>(
+  path: string,
+  init: RequestInit = {},
+  fallbackMessage?: string,
+): Promise<T> {
+  const method = (init.method || "GET").toUpperCase();
+  const headers = new Headers(init.headers);
+
+  headers.set("Accept", "application/json");
+  if (typeof init.body === "string" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (UNSAFE_METHODS.has(method)) {
+    const csrfToken = readCookie("idc_csrf");
+    if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+  }
+
+  const response = await fetch(apiUrl(path), {
+    ...init,
+    credentials: "include",
+    headers,
+  });
+
+  if (!response.ok) {
+    const payload = await readErrorPayload(response);
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent<UnauthorizedEventDetail>(API_UNAUTHORIZED_EVENT, {
+        detail: { path, status: 401 },
+      }));
+    }
+    throw new ApiError(response.status, payload, fallbackMessage);
+  }
+
+  if (response.status === 204) return undefined as T;
+  const text = await response.text();
+  if (!text) return undefined as T;
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return text as T;
   }
 }
 
 export function documentDownloadUrl(transactionId: number, documentId: number): string {
-  return `${API_BASE}/api/transactions/${transactionId}/documents/${documentId}/download`;
+  return apiUrl(`/api/transactions/${transactionId}/documents/${documentId}/download`);
 }
 
-export async function fetchTransactions(page = 1, size = 20): Promise<{ items: TransactionOut[]; page: number; size: number; }> {
-  const res = await fetch(`${API_BASE}/api/transactions?page=${page}&size=${size}`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to fetch transactions: ${res.status}`);
-  return res.json();
+export interface TransactionListOptions {
+  page?: number;
+  size?: number;
+  client?: string;
+  status?: string;
+  sort?: "date" | "amount" | "client";
+  direction?: "asc" | "desc";
+}
+
+export async function fetchTransactions(options: TransactionListOptions = {}): Promise<{ items: TransactionOut[]; page: number; size: number; total: number; }> {
+  const params = new URLSearchParams({
+    page: String(options.page ?? 1),
+    size: String(options.size ?? 20),
+    sort: options.sort ?? "date",
+    direction: options.direction ?? "desc",
+  });
+  if (options.client?.trim()) params.set("client", options.client.trim());
+  if (options.status?.trim()) params.set("status", options.status.trim());
+  return apiRequest(`/api/transactions?${params.toString()}`, {}, "Failed to fetch transactions");
 }
 
 export async function fetchTransactionSummary(): Promise<TransactionSummary> {
-  const res = await fetch(`${API_BASE}/api/transactions/summary`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to fetch transaction summary: ${res.status}`);
-  return res.json();
+  return apiRequest("/api/transactions/summary", {}, "Failed to fetch transaction summary");
 }
 
 export async function createTransaction(payload: TransactionCreate): Promise<TransactionOut> {
-  const res = await fetch(`${API_BASE}/api/transactions`, {
+  return apiRequest("/api/transactions", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to create transaction");
-  return res.json();
+  }, "Failed to create transaction");
 }
 
 export async function fetchTransaction(id: number): Promise<TransactionOut> {
-  const res = await fetch(`${API_BASE}/api/transactions/${id}`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Transaction ${id} not found`);
-  return res.json();
+  return apiRequest(`/api/transactions/${id}`, {}, `Transaction ${id} not found`);
 }
 
-export async function updateTransaction(id: number, payload: Partial<Pick<TransactionOut, "status" | "item_description" | "client_quote_amount" | "client_quote_currency" | "client_po_amount" | "supplier_po_amount">>): Promise<TransactionOut> {
-  const res = await fetch(`${API_BASE}/api/transactions/${id}`, {
+export async function updateTransaction(id: number, payload: Partial<Pick<TransactionOut, "status" | "item_description" | "client_quote_amount" | "client_quote_currency" | "client_po_amount" | "supplier_po_amount">> & { status_reason?: string }): Promise<TransactionOut> {
+  return apiRequest(`/api/transactions/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`Failed to update transaction ${id}`);
-  return res.json();
+  }, `Failed to update transaction ${id}`);
 }
 
 export async function deleteTransaction(id: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/transactions/${id}`, { method: 'DELETE', headers: { ...authHeaders() } });
-  if (!res.ok && res.status !== 204) throw new Error('Failed to delete transaction');
+  await apiRequest(`/api/transactions/${id}`, { method: "DELETE" }, "Failed to delete transaction");
 }
 
 export async function fetchClients(): Promise<{ items: ClientOut[] }> {
-  const res = await fetch(`${API_BASE}/api/clients`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to fetch clients`);
-  return res.json();
+  return apiRequest("/api/clients", {}, "Failed to fetch clients");
+}
+
+export async function createClient(payload: ClientCreate): Promise<ClientOut> {
+  return apiRequest("/api/clients", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, "Failed to create client");
+}
+
+export async function updateClient(clientId: number, payload: ClientUpdate): Promise<ClientOut> {
+  return apiRequest(`/api/clients/${clientId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }, "Failed to update client");
 }
 
 export async function fetchClientMetrics(): Promise<{ items: ClientMetricOut[] }> {
-  const res = await fetch(`${API_BASE}/api/clients/metrics`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to fetch client metrics`);
-  return res.json();
+  return apiRequest("/api/clients/metrics", {}, "Failed to fetch client metrics");
 }
 
 export async function fetchSuppliers(): Promise<{ items: SupplierOut[] }> {
-  const res = await fetch(`${API_BASE}/api/suppliers`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to fetch suppliers`);
-  return res.json();
+  return apiRequest("/api/suppliers", {}, "Failed to fetch suppliers");
+}
+
+export async function createSupplier(payload: SupplierCreate): Promise<SupplierOut> {
+  return apiRequest("/api/suppliers", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, "Failed to create supplier");
+}
+
+export async function updateSupplier(supplierId: number, payload: SupplierUpdate): Promise<SupplierOut> {
+  return apiRequest(`/api/suppliers/${supplierId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }, "Failed to update supplier");
 }
 
 export async function fetchSupplierSummary(): Promise<SupplierSummary> {
-  const res = await fetch(`${API_BASE}/api/suppliers/summary`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to fetch supplier summary`);
-  return res.json();
+  return apiRequest("/api/suppliers/summary", {}, "Failed to fetch supplier summary");
 }
 
 export async function fetchSupplierMetrics(): Promise<{ items: SupplierMetricOut[] }> {
-  const res = await fetch(`${API_BASE}/api/suppliers/metrics`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to fetch supplier metrics`);
-  return res.json();
+  return apiRequest("/api/suppliers/metrics", {}, "Failed to fetch supplier metrics");
 }
 
-// Documents
 export async function listDocuments(transactionId: number): Promise<{ items: Array<{ id: number; category: string; name: string; uploaded_by?: string; uploaded_at: string; mime_type?: string | null; size_bytes?: number | null; }>}> {
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/documents`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error("Failed to fetch documents");
-  return res.json();
+  return apiRequest(`/api/transactions/${transactionId}/documents`, {}, "Failed to fetch documents");
 }
 
 export async function createDocument(transactionId: number, payload: { category: string; name: string; uploaded_by?: string; }): Promise<{ id: number; }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/documents`, {
+  return apiRequest(`/api/transactions/${transactionId}/documents`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to create document");
-  return res.json();
+  }, "Failed to create document");
 }
 
-// Shipment
 export async function getShipment(transactionId: number): Promise<Partial<{ lead_time_days: number; tracking_number: string; shipped_date: string; eta_date: string }>> {
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/shipment`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error("Failed to get shipment");
-  return res.json();
+  return apiRequest(`/api/transactions/${transactionId}/shipment`, {}, "Failed to get shipment");
 }
 
-export async function upsertShipment(transactionId: number, payload: Partial<{ lead_time_days: number; tracking_number: string; shipped_date: string; eta_date: string }>): Promise<{ ok: boolean }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/shipment`, {
+export async function upsertShipment(transactionId: number, payload: Partial<{ lead_time_days: number; tracking_number: string; shipped_date: string; eta_date: string }>): Promise<{ ok: boolean; status?: string | null }>{
+  return apiRequest(`/api/transactions/${transactionId}/shipment`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to update shipment");
-  return res.json();
+  }, "Failed to update shipment");
 }
 
-// Activity
 export async function listActivity(transactionId: number): Promise<{ items: Array<{ id: number; action: string; details?: string; created_at: string; }>}> {
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/activity`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error("Failed to fetch activity");
-  return res.json();
+  return apiRequest(`/api/transactions/${transactionId}/activity`, {}, "Failed to fetch activity");
 }
 
 export async function addActivity(transactionId: number, payload: { action: string; details?: string }): Promise<{ ok: boolean }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/activity`, {
+  return apiRequest(`/api/transactions/${transactionId}/activity`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to add activity");
-  return res.json();
+  }, "Failed to add activity");
 }
 
-// Suppliers link
 export async function getTransactionSuppliers(transactionId: number): Promise<{ items: SupplierOut[] }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/suppliers`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error("Failed to fetch transaction suppliers");
-  return res.json();
+  return apiRequest(`/api/transactions/${transactionId}/suppliers`, {}, "Failed to fetch transaction suppliers");
 }
 
 export async function getBulkTransactionSuppliers(transactionIds: number[]): Promise<{ items: Array<{ transaction_id: number; suppliers: SupplierOut[] }> }>{
   if (transactionIds.length === 0) return { items: [] };
   const params = new URLSearchParams({ ids: transactionIds.join(",") });
-  const res = await fetch(`${API_BASE}/api/transactions/suppliers?${params.toString()}`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error("Failed to fetch transaction suppliers");
-  return res.json();
+  return apiRequest(`/api/transactions/suppliers?${params.toString()}`, {}, "Failed to fetch transaction suppliers");
 }
 
 export async function addTransactionSupplier(transactionId: number, supplier_id: number): Promise<{ ok: boolean }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/suppliers`, {
+  return apiRequest(`/api/transactions/${transactionId}/suppliers`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ supplier_id }),
-  });
-  if (!res.ok) throw new Error("Failed to add transaction supplier");
-  return res.json();
+  }, "Failed to add transaction supplier");
 }
 
 export async function updateRefs(transactionId: number, payload: { rfq_number?: string; client_po_number?: string; supplier_po_number?: string }): Promise<{ ok: boolean }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/refs`, {
+  return apiRequest(`/api/transactions/${transactionId}/refs`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to update references");
-  return res.json();
+  }, "Failed to update references");
 }
 
-export async function uploadDocument(transactionId: number, payload: { category: string; name: string; mime_type?: string; size_bytes?: number; content_base64?: string; uploaded_by?: string }): Promise<{ id: number }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/documents`, {
+export async function uploadDocument(transactionId: number, payload: { category: string; name: string; mime_type?: string; size_bytes?: number; content_base64?: string; po_number?: string }): Promise<{ id: number }>{
+  return apiRequest(`/api/transactions/${transactionId}/documents`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to upload document");
-  return res.json();
-} 
+  }, "Failed to upload document");
+}
 
 export async function deleteDocument(transactionId: number, documentId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/documents/${documentId}`, { method: 'DELETE', headers: { ...authHeaders() } });
-  if (!res.ok && res.status !== 204) throw new Error('Failed to delete document');
+  await apiRequest(`/api/transactions/${transactionId}/documents/${documentId}`, { method: "DELETE" }, "Failed to delete document");
 }
 
-// Supplier quotes
 export async function listSupplierQuotes(transactionId: number): Promise<{ items: SupplierQuoteOut[] }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/quotes`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error('Failed to fetch supplier quotes');
-  return res.json();
+  return apiRequest(`/api/transactions/${transactionId}/quotes`, {}, "Failed to fetch supplier quotes");
 }
 
 export async function createSupplierQuote(transactionId: number, payload: { supplier_id: number; amount: number; currency?: string; lead_time_days?: number; notes?: string }): Promise<{ id: number }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/quotes`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+  return apiRequest(`/api/transactions/${transactionId}/quotes`, {
+    method: "POST",
     body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('Failed to create supplier quote');
-  return res.json();
+  }, "Failed to create supplier quote");
 }
 
-// Associated costs
 export async function listAssociatedCosts(transactionId: number): Promise<{ items: AssociatedCostOut[] }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/costs`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error('Failed to fetch costs');
-  return res.json();
+  return apiRequest(`/api/transactions/${transactionId}/costs`, {}, "Failed to fetch costs");
 }
 
-export async function createAssociatedCost(transactionId: number, payload: { description: string; amount: number; status?: 'paid'|'due'|'overdue' }): Promise<{ id: number }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/costs`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error('Failed to create cost');
-  return res.json();
+export async function createAssociatedCost(transactionId: number, payload: { description: string; amount: number; status?: "paid" | "due" | "overdue" }): Promise<{ id: number }>{
+  return apiRequest(`/api/transactions/${transactionId}/costs`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, "Failed to create cost");
 }
 
-export async function updateAssociatedCost(transactionId: number, costId: number, payload: Partial<{ description: string; amount: number; status: 'paid'|'due'|'overdue' }>): Promise<{ ok: boolean }>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/costs/${costId}`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error('Failed to update cost');
-  return res.json();
+export async function updateAssociatedCost(transactionId: number, costId: number, payload: Partial<{ description: string; amount: number; status: "paid" | "due" | "overdue" }>): Promise<{ ok: boolean }>{
+  return apiRequest(`/api/transactions/${transactionId}/costs/${costId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  }, "Failed to update cost");
 }
 
 export async function deleteAssociatedCost(transactionId: number, costId: number): Promise<void>{
-  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/costs/${costId}`, { method: 'DELETE', headers: { ...authHeaders() } });
-  if (!res.ok && res.status !== 204) throw new Error('Failed to delete cost');
+  await apiRequest(`/api/transactions/${transactionId}/costs/${costId}`, { method: "DELETE" }, "Failed to delete cost");
 }
 
 export async function getQuickBooksStatus(): Promise<QuickBooksStatus> {
-  const res = await fetch(`${API_BASE}/quickbooks/status`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to fetch QuickBooks status: ${res.status}`);
-  return res.json();
+  return apiRequest("/quickbooks/status", {}, "Failed to fetch QuickBooks status");
 }
 
 export async function getQuickBooksAuthorizationUrl(): Promise<QuickBooksAuthorization> {
-  const res = await fetch(`${API_BASE}/quickbooks/auth/connect`, { headers: { ...authHeaders() } });
-  if (!res.ok) throw new Error(`Failed to start QuickBooks connection: ${res.status}`);
-  return res.json();
+  return apiRequest("/quickbooks/auth/connect", {}, "Failed to start QuickBooks connection");
 }
 
 export async function disconnectQuickBooks(): Promise<{ message: string }> {
-  const res = await fetch(`${API_BASE}/quickbooks/disconnect`, {
-    method: 'POST',
-    headers: { ...authHeaders() },
-  });
-  if (!res.ok) throw new Error(`Failed to disconnect QuickBooks: ${res.status}`);
-  return res.json();
+  return apiRequest("/quickbooks/disconnect", { method: "POST" }, "Failed to disconnect QuickBooks");
 }
 
 export async function previewQuickBooksInvoice(transactionId: number, payload: QuickBooksInvoicePayload): Promise<QuickBooksInvoicePreview> {
-  const res = await fetch(`${API_BASE}/quickbooks/transactions/${transactionId}/invoice-preview`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+  return apiRequest(`/quickbooks/transactions/${transactionId}/invoice-preview`, {
+    method: "POST",
     body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const error = await readErrorPayload(res);
-    throw Object.assign(new Error(error.details || error.error || 'Failed to preview QuickBooks invoice'), { payload: error });
-  }
-
-  return res.json();
+  }, "Failed to preview QuickBooks invoice");
 }
 
 export async function createQuickBooksInvoice(transactionId: number, payload: QuickBooksInvoicePayload): Promise<QuickBooksInvoiceCreateResult> {
-  const res = await fetch(`${API_BASE}/quickbooks/transactions/${transactionId}/create-invoice`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+  return apiRequest(`/quickbooks/transactions/${transactionId}/create-invoice`, {
+    method: "POST",
     body: JSON.stringify(payload),
-  });
+  }, "Failed to create QuickBooks invoice");
+}
 
-  if (!res.ok) {
-    const error = await readErrorPayload(res);
-    throw Object.assign(new Error(error.details || error.error || 'Failed to create QuickBooks invoice'), { payload: error });
-  }
+export async function loginUser(email: string, password: string): Promise<{ user: Employee; expires_at?: string }> {
+  return apiRequest("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  }, "Unable to sign in");
+}
 
-  return res.json();
+export async function fetchCurrentUser(): Promise<{ user: Employee }> {
+  return apiRequest("/auth/me", {}, "Unable to load your account");
+}
+
+export async function logoutUser(): Promise<{ message: string }> {
+  return apiRequest("/auth/logout", { method: "POST" }, "Unable to sign out");
+}
+
+export async function updateCurrentUser(payload: { name?: string; email?: string; current_password?: string }): Promise<{ user: Employee }> {
+  return apiRequest("/auth/me", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }, "Unable to update your profile");
+}
+
+export async function changeCurrentUserPassword(payload: { current_password: string; new_password: string }): Promise<{ message: string; user: Employee }> {
+  return apiRequest("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, "Unable to change your password");
+}
+
+export async function fetchEmployees(): Promise<{ employees: Employee[] }> {
+  return apiRequest("/auth/employees", {}, "Unable to load employees");
+}
+
+export async function createEmployeeAccount(payload: { name: string; email: string; password: string; role: EmployeeRole }): Promise<{ employee: Employee }> {
+  return apiRequest("/auth/employees", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, "Unable to create the employee account");
+}
+
+export async function updateEmployeeAccount(employeeId: number, payload: { name?: string; email?: string; role?: EmployeeRole; is_active?: boolean; temporary_password?: string }): Promise<{ employee: Employee }> {
+  return apiRequest(`/auth/employees/${employeeId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }, "Unable to update the employee account");
+}
+
+export async function disableEmployeeAccount(employeeId: number): Promise<{ employee: Employee }> {
+  return apiRequest(`/auth/employees/${employeeId}`, { method: "DELETE" }, "Unable to disable the employee account");
 }

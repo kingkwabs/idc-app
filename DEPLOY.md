@@ -14,7 +14,7 @@ The history scan intentionally blocks deployment when a credential was committed
 
 ## Backend on Render
 
-Deploy from the repository root with `render.yaml`. The service uses `idc-backend` as its root directory, installs `requirements-runtime.txt`, downloads the AWS RDS CA bundle, applies `scripts/ddl_upgrade.py`, and then starts Gunicorn.
+Deploy from the repository root with `render.yaml`. The service uses `idc-backend` as its root directory, installs `requirements-runtime.txt`, downloads the AWS RDS CA bundle, applies `scripts/ddl_upgrade.py` in Render's pre-deploy phase, and then starts Gunicorn.
 
 The health endpoints are:
 

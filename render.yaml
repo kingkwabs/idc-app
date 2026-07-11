@@ -4,7 +4,8 @@ services:
     env: python
     rootDir: idc-backend
     buildCommand: pip install -r requirements-runtime.txt && mkdir -p certs && curl --proto '=https' --tlsv1.2 -fsS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o certs/rds-global-bundle.pem
-    startCommand: python scripts/ddl_upgrade.py && gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 4 --timeout 120 --access-logfile -
+    preDeployCommand: python scripts/ddl_upgrade.py
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 4 --timeout 120 --access-logfile -
     healthCheckPath: /health
     envVars:
       - key: APP_ENV

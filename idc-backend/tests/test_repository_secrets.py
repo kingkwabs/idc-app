@@ -88,3 +88,25 @@ def test_history_flags_deleted_private_key_commit(tmp_path):
 	assert working_findings == []
 	assert any(finding.path == "server.pem" for finding in history_findings)
 	assert any(finding.commit for finding in history_findings)
+
+
+def test_history_scans_tree_refs_that_are_not_commits(tmp_path):
+	repo = initialize_repository(tmp_path)
+	(repo / "README.md").write_text("clean\n", encoding="utf-8")
+	commit_all(repo, "initial")
+	key_path = repo / "tree-only.pem"
+	key_path.write_text(
+		"-----BEGIN " + "PRIVATE KEY-----\nnot-real\n-----END PRIVATE KEY-----\n",
+		encoding="utf-8",
+	)
+	git(repo, "add", "tree-only.pem")
+	tree_id = git(repo, "write-tree").stdout.strip()
+	git(repo, "update-ref", "refs/codex/test-tree", tree_id)
+	key_path.unlink()
+
+	findings = scan_history(repo)
+
+	assert any(
+		finding.path == "tree-only.pem" and finding.commit == tree_id
+		for finding in findings
+	)

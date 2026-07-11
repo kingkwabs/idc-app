@@ -131,27 +131,54 @@ def scan_working_tree(repo_root: Path) -> list[Finding]:
 	return findings
 
 
+def _scan_tree(
+	repo_root: Path,
+	treeish: str,
+	source_object: str,
+	seen_entries: set[tuple[str, str]],
+) -> list[Finding]:
+	findings = []
+	entries = _git(repo_root, "ls-tree", "-r", "-z", "--full-tree", treeish).split(b"\0")
+	for entry in entries:
+		if not entry:
+			continue
+		header, raw_path = entry.split(b"\t", 1)
+		_mode, object_type, blob_id = header.decode("ascii").split()
+		if object_type != "blob":
+			continue
+		path = raw_path.decode("utf-8", errors="surrogateescape")
+		entry_key = (blob_id, path)
+		if entry_key in seen_entries:
+			continue
+		seen_entries.add(entry_key)
+		content = _git(repo_root, "cat-file", "blob", blob_id)
+		findings.extend(_scan_content(path, content, source_object))
+	return findings
+
+
 def scan_history(repo_root: Path) -> list[Finding]:
-	"""Scan every unique path/blob pair reachable from local Git history."""
+	"""Scan every unique path/blob pair reachable from commits or direct refs."""
 	commits = _git(repo_root, "rev-list", "--all").decode("ascii").splitlines()
 	seen_entries: set[tuple[str, str]] = set()
 	findings = []
 	for commit in commits:
-		entries = _git(repo_root, "ls-tree", "-r", "-z", "--full-tree", commit).split(b"\0")
-		for entry in entries:
-			if not entry:
-				continue
-			header, raw_path = entry.split(b"\t", 1)
-			_mode, object_type, blob_id = header.decode("ascii").split()
-			if object_type != "blob":
-				continue
-			path = raw_path.decode("utf-8", errors="surrogateescape")
-			entry_key = (blob_id, path)
-			if entry_key in seen_entries:
-				continue
-			seen_entries.add(entry_key)
-			content = _git(repo_root, "cat-file", "blob", blob_id)
-			findings.extend(_scan_content(path, content, commit))
+		findings.extend(_scan_tree(repo_root, commit, commit, seen_entries))
+
+	ref_lines = _git(
+		repo_root,
+		"for-each-ref",
+		"--format=%(refname)\t%(objecttype)\t%(objectname)",
+	).decode("utf-8").splitlines()
+	for line in ref_lines:
+		ref_name, object_type, object_id = line.split("\t", 2)
+		if object_type == "tree":
+			findings.extend(_scan_tree(repo_root, ref_name, object_id, seen_entries))
+		elif object_type == "blob":
+			entry_key = (object_id, f"<{ref_name}>")
+			if entry_key not in seen_entries:
+				seen_entries.add(entry_key)
+				content = _git(repo_root, "cat-file", "blob", object_id)
+				findings.extend(_scan_content(f"<{ref_name}>", content, object_id))
 	return findings
 
 
@@ -167,7 +194,7 @@ def main() -> int:
 	parser.add_argument(
 		"--history",
 		action="store_true",
-		help="scan all commits reachable from local refs instead of the working tree",
+		help="scan all objects reachable from local refs instead of the working tree",
 	)
 	parser.add_argument(
 		"--repo",

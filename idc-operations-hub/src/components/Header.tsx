@@ -62,7 +62,7 @@ export function Header({
           type="button"
           onClick={() => navigate("/")}
           className="rounded-md outline-none transition-opacity duration-150 hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          aria-label="Go to transactions"
+          aria-label="Go to dashboard"
         >
           <img src="/idce_logo.avif" alt="IDC Energy" className="h-9 w-auto sm:h-10" />
         </button>

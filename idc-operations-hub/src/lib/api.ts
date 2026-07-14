@@ -110,6 +110,11 @@ export interface TransactionSummary {
   total_revenue: number;
 }
 
+export interface TransactionYearCount {
+  year: number | null;
+  count: number;
+}
+
 export interface SupplierQuoteOut {
   id: number;
   supplier_id: number;
@@ -354,6 +359,7 @@ export interface TransactionListOptions {
   size?: number;
   client?: string;
   status?: string;
+  year?: number | "undated";
   sort?: "date" | "amount" | "client";
   direction?: "asc" | "desc";
 }
@@ -367,7 +373,12 @@ export async function fetchTransactions(options: TransactionListOptions = {}): P
   });
   if (options.client?.trim()) params.set("client", options.client.trim());
   if (options.status?.trim()) params.set("status", options.status.trim());
+  if (options.year !== undefined) params.set("year", String(options.year));
   return apiRequest(`/api/transactions?${params.toString()}`, {}, "Failed to fetch transactions");
+}
+
+export async function fetchTransactionYears(): Promise<{ items: TransactionYearCount[]; total: number; }> {
+  return apiRequest("/api/transactions/years", {}, "Failed to fetch transaction years");
 }
 
 export async function fetchTransactionSummary(): Promise<TransactionSummary> {

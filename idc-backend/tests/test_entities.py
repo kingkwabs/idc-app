@@ -66,7 +66,7 @@ def test_transactions_are_capped_filtered_sorted_and_paginated(client):
 	).get_json()
 
 	for client_id, description, amount, status, date_received in [
-		(alpha["id"], "Alpha valve", 100, "rfq-from-client", "2026-01-01"),
+		(alpha["id"], "Alpha valve", 100, "rfq-from-client", "2025-01-01"),
 		(beta["id"], "Beta turbine", 500, "loans-cleared", "2026-02-01"),
 	]:
 		response = client.post(
@@ -95,6 +95,13 @@ def test_transactions_are_capped_filtered_sorted_and_paginated(client):
 		assert "Set loans-cleared during test" in audit.details
 		assert "Primary Admin" in audit.details
 
+	undated = client.post(
+		"/api/transactions",
+		headers=csrf_headers(client),
+		json={"client_id": alpha["id"], "item_description": "Undated pump"},
+	)
+	assert undated.status_code == 201
+
 	filtered = client.get(
 		"/api/transactions?client=beta&status=cleared&sort=amount&direction=desc&page=1&size=1"
 	)
@@ -106,6 +113,20 @@ def test_transactions_are_capped_filtered_sorted_and_paginated(client):
 	assert payload["items"][0]["item_description"] == "Beta turbine"
 	assert payload["items"][0]["date_received"] == "2026-02-01"
 	assert "quickbooks_realm_fingerprint" not in payload["items"][0]
+
+	years = client.get("/api/transactions/years")
+	assert years.status_code == 200
+	assert years.get_json() == {
+		"items": [
+			{"year": 2026, "count": 1},
+			{"year": 2025, "count": 1},
+			{"year": None, "count": 1},
+		],
+		"total": 3,
+	}
+	assert client.get("/api/transactions?year=2025").get_json()["items"][0]["item_description"] == "Alpha valve"
+	assert client.get("/api/transactions?year=undated").get_json()["items"][0]["item_description"] == "Undated pump"
+	assert client.get("/api/transactions?year=not-a-year").status_code == 400
 
 	assert client.get("/api/transactions?page=0&size=20").status_code == 400
 	assert client.get("/api/transactions?page=1&size=101").status_code == 400

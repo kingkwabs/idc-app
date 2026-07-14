@@ -5,10 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { fetchTransactionSummary } from "../lib/api";
 import { Skeleton } from "./ui/skeleton";
 
-interface KPICardsProps {
-  mode: "recent" | "all";
-}
-
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -19,7 +15,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Transaction summary is unavailable";
 }
 
-export function KPICards({ mode }: KPICardsProps) {
+export function KPICards() {
   const navigate = useNavigate();
   const [activeCount, setActiveCount] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
@@ -48,7 +44,7 @@ export function KPICards({ mode }: KPICardsProps) {
     return () => {
       cancelled = true;
     };
-  }, [mode]);
+  }, []);
 
   const metrics = useMemo(
     () => [
@@ -91,7 +87,7 @@ export function KPICards({ mode }: KPICardsProps) {
             <button
               key={metric.label}
               type="button"
-              onClick={() => navigate("/?view=transactions-all")}
+              onClick={() => navigate("/transactions")}
               className="group min-w-0 p-5 text-left outline-none transition-[background-color,box-shadow,transform] duration-150 [transition-timing-function:var(--ease-out-ui)] hover:bg-secondary active:scale-[0.99] focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-ring-soft)] motion-reduce:transition-none motion-reduce:active:scale-100 sm:p-6"
               aria-label={`View all transactions. ${metric.label}: ${loading || error ? "not available" : metric.value}`}
             >

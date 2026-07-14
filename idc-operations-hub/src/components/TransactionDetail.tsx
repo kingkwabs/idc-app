@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -35,6 +35,7 @@ import { getWorkflowStepIndex, getWorkflowStatusLabel, WORKFLOW_STEPS } from "..
 
 interface TransactionDetailProps {
   onBack: () => void;
+  backLabel: string;
 }
 
 type WorkspaceTab = "documents" | "shipment" | "financials";
@@ -65,9 +66,8 @@ function formatReceivedDate(value?: string | null) {
   });
 }
 
-export function TransactionDetail({ onBack }: TransactionDetailProps) {
+export function TransactionDetail({ onBack, backLabel }: TransactionDetailProps) {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { user } = useAuth();
   const transactionId = Number(id);
   const hasValidTransactionId = Number.isInteger(transactionId) && transactionId > 0;
@@ -243,7 +243,7 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
     setActionError(null);
     try {
       await deleteTransaction(transactionId);
-      navigate("/");
+      onBack();
     } catch (error) {
       const message = getErrorMessage(error, "The transaction could not be deleted.");
       setActionError(message);
@@ -257,7 +257,7 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
       <div aria-busy="true" aria-label="Loading transaction" className="space-y-6">
         <Button type="button" variant="ghost" onClick={onBack}>
           <ArrowLeft aria-hidden="true" />
-          All transactions
+          {backLabel}
         </Button>
         <span className="sr-only">Loading transaction details...</span>
         <div className="space-y-3">
@@ -279,7 +279,7 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
       <div className="space-y-6">
         <Button type="button" variant="ghost" onClick={onBack}>
           <ArrowLeft aria-hidden="true" />
-          All transactions
+          {backLabel}
         </Button>
         <section
           role="alert"
@@ -399,7 +399,7 @@ export function TransactionDetail({ onBack }: TransactionDetailProps) {
       <header className="space-y-4">
         <Button type="button" variant="ghost" onClick={onBack}>
           <ArrowLeft aria-hidden="true" />
-          All transactions
+          {backLabel}
         </Button>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

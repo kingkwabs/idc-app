@@ -1,5 +1,7 @@
+from datetime import date
+
 from flask import Blueprint, g, request, jsonify
-from sqlalchemy import select, delete, func, case
+from sqlalchemy import select, delete, func, case, extract
 from database import db_session
 from models import (
 	ActivityLog,
@@ -56,10 +58,21 @@ def list_transactions():
 
 	client_term = request.args.get("client", "").strip().lower()
 	status_term = request.args.get("status", "").strip().lower()
+	year_term = request.args.get("year", "").strip().lower()
 	sort_key = request.args.get("sort", "date").strip().lower()
 	direction = request.args.get("direction", "desc").strip().lower()
 	if sort_key not in {"date", "amount", "client"} or direction not in {"asc", "desc"}:
 		return jsonify({"error": "invalid_transaction_sort"}), 400
+
+	year_range = None
+	if year_term and year_term != "undated":
+		try:
+			year = int(year_term)
+		except ValueError:
+			return jsonify({"error": "invalid_transaction_year"}), 400
+		if year < 1 or year > 9998:
+			return jsonify({"error": "invalid_transaction_year"}), 400
+		year_range = (date(year, 1, 1), date(year + 1, 1, 1))
 
 	offset = (page - 1) * size
 	with db_session() as session:
@@ -68,6 +81,13 @@ def list_transactions():
 			filters.append(func.lower(Client.name).contains(client_term))
 		if status_term:
 			filters.append(func.lower(func.coalesce(Transaction.status, "")).contains(status_term))
+		if year_term == "undated":
+			filters.append(Transaction.date_received.is_(None))
+		elif year_range is not None:
+			filters.extend([
+				Transaction.date_received >= year_range[0],
+				Transaction.date_received < year_range[1],
+			])
 
 		amount = func.coalesce(Transaction.client_po_amount, Transaction.client_quote_amount, 0)
 		sort_column = {
@@ -94,6 +114,29 @@ def list_transactions():
 		total = session.scalar(total_stmt) or 0
 		data = [_transaction_payload(item) for item in items]
 		return jsonify({"items": data, "page": page, "size": size, "total": int(total)})
+
+
+@bp.get('/years')
+def get_transaction_years():
+	year_column = extract("year", Transaction.date_received)
+	with db_session() as session:
+		rows = session.execute(
+			select(
+				year_column.label("year"),
+				func.count(Transaction.id).label("count"),
+			).group_by(year_column)
+		).all()
+
+	items = [
+		{"year": int(row.year), "count": int(row.count)}
+		for row in rows
+		if row.year is not None
+	]
+	items.sort(key=lambda item: item["year"], reverse=True)
+	undated_count = sum(int(row.count) for row in rows if row.year is None)
+	if undated_count:
+		items.append({"year": None, "count": undated_count})
+	return jsonify({"items": items, "total": sum(item["count"] for item in items)})
 
 
 @bp.get('/summary')

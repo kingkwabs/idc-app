@@ -1,6 +1,6 @@
 import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
-import { LoaderCircle, Plus } from "lucide-react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { ArrowLeft, LoaderCircle, Plus } from "lucide-react";
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { Header } from "./components/Header";
 import { LegalPage } from "./components/LegalPage";
@@ -66,14 +66,32 @@ function AdminOnly({ isAdmin, children }: { isAdmin: boolean; children: ReactNod
   return isAdmin ? children : <Navigate to="/" replace />;
 }
 
-function Dashboard({ mode, onCreate }: { mode: "recent" | "all"; onCreate: () => void }) {
+function TransactionWorkspace({ mode, onCreate }: { mode: "recent" | "all"; onCreate: () => void }) {
+  const isRegister = mode === "all";
+
   return (
     <div className="mx-auto w-full max-w-[96rem] space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Operations</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Transactions</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Monitor orders from request through delivery and invoicing.</p>
+          {isRegister && (
+            <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2">
+              <Link to="/">
+                <ArrowLeft aria-hidden="true" />
+                Dashboard
+              </Link>
+            </Button>
+          )}
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+            {isRegister ? "Transaction register" : "Operations"}
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {isRegister ? "All transactions" : "Operations overview"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isRegister
+              ? "Search the complete RFQ history, organized by year."
+              : "Monitor current activity and the latest client RFQs."}
+          </p>
         </div>
         <Button type="button" onClick={onCreate}>
           <Plus aria-hidden="true" />
@@ -81,7 +99,7 @@ function Dashboard({ mode, onCreate }: { mode: "recent" | "all"; onCreate: () =>
         </Button>
       </div>
 
-      <KPICards mode={mode} />
+      {!isRegister && <KPICards />}
       <TransactionsTable mode={mode} />
     </div>
   );
@@ -113,8 +131,6 @@ export default function App() {
     return <Navigate to="/profile" replace />;
   }
 
-  const search = new URLSearchParams(location.search);
-  const dashboardMode: "recent" | "all" = search.get("view") === "transactions-all" ? "all" : "recent";
   const currentView: SidebarView = path.startsWith("/clients")
     ? "clients"
     : path.startsWith("/suppliers")
@@ -125,11 +141,18 @@ export default function App() {
           ? "quickbooks"
           : path.startsWith("/transactions/")
             ? "transaction-detail"
-            : "dashboard";
+            : path === "/transactions"
+              ? "transactions"
+              : "dashboard";
+
+  const transactionReturnTo = (
+    location.state as { transactionReturnTo?: string } | null
+  )?.transactionReturnTo === "/" ? "/" : "/transactions";
 
   const handleSidebarNavigate = (view: SidebarView) => {
     const destinations: Partial<Record<SidebarView, string>> = {
       dashboard: "/",
+      transactions: "/transactions",
       clients: "/clients",
       suppliers: "/suppliers",
       employees: "/employees",
@@ -174,8 +197,19 @@ export default function App() {
         <main className="min-w-0 flex-1 overflow-y-auto bg-background">
           <Suspense fallback={<PageLoading />}>
             <Routes>
-              <Route path="/" element={<Dashboard mode={dashboardMode} onCreate={() => setIsModalOpen(true)} />} />
-              <Route path="/transactions/:id" element={<div className="p-4 sm:p-6 lg:p-8"><TransactionDetail onBack={() => navigate("/")} /></div>} />
+              <Route path="/" element={<TransactionWorkspace mode="recent" onCreate={() => setIsModalOpen(true)} />} />
+              <Route path="/transactions" element={<TransactionWorkspace mode="all" onCreate={() => setIsModalOpen(true)} />} />
+              <Route
+                path="/transactions/:id"
+                element={(
+                  <div className="p-4 sm:p-6 lg:p-8">
+                    <TransactionDetail
+                      onBack={() => navigate(transactionReturnTo)}
+                      backLabel={transactionReturnTo === "/" ? "Recent transactions" : "All transactions"}
+                    />
+                  </div>
+                )}
+              />
               <Route path="/clients" element={<div className="p-4 sm:p-6 lg:p-8"><ClientsPage /></div>} />
               <Route path="/suppliers" element={<div className="p-4 sm:p-6 lg:p-8"><SuppliersPage /></div>} />
               <Route path="/employees" element={<AdminOnly isAdmin={isAdmin}><div className="p-4 sm:p-6 lg:p-8"><EmployeesPage /></div></AdminOnly>} />
@@ -194,7 +228,10 @@ export default function App() {
             onClose={() => setIsModalOpen(false)}
             onSubmit={({ createdId }) => {
               setIsModalOpen(false);
-              navigate(`/transactions/${createdId}`);
+              const returnTo = path === "/transactions" ? "/transactions" : "/";
+              navigate(`/transactions/${createdId}`, {
+                state: { transactionReturnTo: returnTo },
+              });
             }}
           />
         </Suspense>

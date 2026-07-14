@@ -2,6 +2,7 @@ import {
   BookOpenCheck,
   Building2,
   Factory,
+  LayoutDashboard,
   ReceiptText,
   UserCog,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import {
 
 export type SidebarView =
   | "dashboard"
+  | "transactions"
   | "transaction-detail"
   | "clients"
   | "suppliers"
@@ -41,7 +43,8 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { name: "Transactions", icon: ReceiptText, view: "dashboard" },
+  { name: "Dashboard", icon: LayoutDashboard, view: "dashboard" },
+  { name: "Transactions", icon: ReceiptText, view: "transactions" },
   { name: "Clients", icon: Building2, view: "clients" },
   { name: "Suppliers", icon: Factory, view: "suppliers" },
 ];
@@ -71,7 +74,7 @@ function SidebarItems({
         const Icon = item.icon;
         const isActive =
           currentView === item.view ||
-          (item.view === "dashboard" && currentView === "transaction-detail");
+          (item.view === "transactions" && currentView === "transaction-detail");
 
         return (
           <li key={item.name}>

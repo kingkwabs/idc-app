@@ -15,7 +15,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Transaction summary is unavailable";
 }
 
-export function KPICards() {
+export function KPICards({ refreshKey = 0 }: { refreshKey?: number }) {
   const navigate = useNavigate();
   const [activeCount, setActiveCount] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
@@ -44,7 +44,7 @@ export function KPICards() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshKey]);
 
   const metrics = useMemo(
     () => [

@@ -23,6 +23,7 @@ import {
   type EmployeeRole,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { formatEasternDateTime } from "../lib/dateTime";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import {
   AlertDialog,
@@ -59,11 +60,6 @@ const PASSWORD_GROUPS = [
   "23456789",
   "!@#$%",
 ];
-
-const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 interface EmployeeForm {
   name: string;
@@ -127,10 +123,7 @@ function replaceEmployee(employees: Employee[], employee: Employee): Employee[] 
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return "Never";
-  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
-  const date = new Date(hasTimezone ? value : `${value}Z`);
-  return Number.isNaN(date.getTime()) ? "Unavailable" : dateTimeFormatter.format(date);
+  return formatEasternDateTime(value, "Never");
 }
 
 function getInitials(name: string): string {

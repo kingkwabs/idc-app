@@ -55,7 +55,14 @@ export function SuppliersPage() {
     setSuppliers((current) =>
       [
         ...current,
-        { id: created.id, name: created.name, quotes: 0, last_quoted: null },
+        {
+          id: created.id,
+          name: created.name,
+          sourcing_records: 0,
+          active_transactions: 0,
+          quotes: 0,
+          last_quoted: null,
+        },
       ].sort((left, right) => left.name.localeCompare(right.name)),
     );
     setSummary((current) => current ? { ...current, total_suppliers: current.total_suppliers + 1 } : current);

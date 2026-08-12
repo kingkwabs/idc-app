@@ -90,9 +90,16 @@ export function CreateSupplierModal({ isOpen, onClose, onSubmit }: CreateSupplie
       setFormData(emptySupplier);
       onClose();
     } catch (error) {
-      setSubmissionError(
-        error instanceof ApiError ? error.message : "The supplier could not be created. Please try again.",
-      );
+      if (error instanceof ApiError && error.payload.error === "supplier_exists") {
+        setFieldErrors((current) => ({
+          ...current,
+          name: "A supplier with this name already exists. Link the existing supplier instead.",
+        }));
+      } else {
+        setSubmissionError(
+          error instanceof ApiError ? error.message : "The supplier could not be created. Please try again.",
+        );
+      }
     } finally {
       setIsSubmitting(false);
     }

@@ -31,6 +31,7 @@ import {
 } from "../lib/api";
 import type { TransactionOut } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { formatCalendarDate } from "../lib/dateTime";
 import { getWorkflowStepIndex, getWorkflowStatusLabel, WORKFLOW_STEPS } from "../lib/workflowStatus";
 
 interface TransactionDetailProps {
@@ -56,14 +57,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 function formatReceivedDate(value?: string | null) {
-  if (!value) return "Not recorded";
-  const date = new Date(`${value.slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatCalendarDate(value, "Not recorded");
 }
 
 export function TransactionDetail({ onBack, backLabel }: TransactionDetailProps) {

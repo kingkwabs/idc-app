@@ -16,6 +16,7 @@ import {
   addActivity,
   addTransactionSupplier,
   createAssociatedCost,
+  createAndLinkTransactionSupplier,
   createQuickBooksInvoice,
   createSupplierQuote,
   deleteAssociatedCost,
@@ -32,9 +33,11 @@ import type {
   AssociatedCostOut,
   QuickBooksInvoicePayload,
   QuickBooksInvoicePreview,
+  SupplierCreate,
   SupplierOut,
   SupplierQuoteOut,
 } from "../lib/api";
+import { CreateSupplierModal } from "./CreateSupplierModal";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -281,6 +284,7 @@ export function FinancialsTab({
   const [amountWarning, setAmountWarning] = useState<string | null>(null);
   const [supplierLinking, setSupplierLinking] = useState(false);
   const [supplierActionError, setSupplierActionError] = useState<string | null>(null);
+  const [supplierCreationOpen, setSupplierCreationOpen] = useState(false);
   const [quoteCreating, setQuoteCreating] = useState(false);
   const [quoteErrors, setQuoteErrors] = useState<FieldErrors>({});
   const [quoteActionError, setQuoteActionError] = useState<string | null>(null);
@@ -355,6 +359,7 @@ export function FinancialsTab({
     setAmountActionError(null);
     setAmountWarning(null);
     setSupplierActionError(null);
+    setSupplierCreationOpen(false);
     setQuoteErrors({});
     setQuoteActionError(null);
     setCostErrors({});
@@ -525,6 +530,25 @@ export function FinancialsTab({
     } finally {
       setSupplierLinking(false);
     }
+  };
+
+  const handleCreateAndLinkSupplier = async (payload: SupplierCreate) => {
+    const supplier = await createAndLinkTransactionSupplier(transactionId, payload);
+    setAvailableSuppliers((current) =>
+      [...current, supplier].sort((left, right) => left.name.localeCompare(right.name)),
+    );
+    setLinkedSuppliers((current) =>
+      [...current, supplier].sort((left, right) => left.name.localeCompare(right.name)),
+    );
+    setSupplierToAdd("");
+    setNewQuote((current) => ({
+      ...current,
+      supplier_id: current.supplier_id || supplier.id,
+    }));
+    setSupplierActionError(null);
+    toast.success("Supplier created and linked", {
+      description: `${supplier.name} is ready for quotation entry.`,
+    });
   };
 
   const handleCreateQuote = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -870,14 +894,26 @@ export function FinancialsTab({
       </Card>
 
       <Card>
-        <div className="space-y-1 px-5 pt-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-base font-semibold text-foreground">Linked suppliers</h3>
-            <Badge variant="secondary">{linkedSuppliers.length}</Badge>
+        <div className="flex flex-col gap-3 px-5 pt-5 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base font-semibold text-foreground">Linked suppliers</h3>
+              <Badge variant="secondary">{linkedSuppliers.length}</Badge>
+            </div>
+            <p className="text-sm leading-5 text-muted-foreground">
+              Link suppliers before recording their quotes for this transaction.
+            </p>
           </div>
-          <p className="text-sm leading-5 text-muted-foreground">
-            Link suppliers before recording their quotes for this transaction.
-          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setSupplierCreationOpen(true)}
+            disabled={contextLoading || supplierLinking}
+          >
+            <Plus aria-hidden="true" />
+            Create and link supplier
+          </Button>
         </div>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2" aria-label="Suppliers linked to this transaction">
@@ -1431,6 +1467,12 @@ export function FinancialsTab({
         </CardContent>
       </Card>
       ) : null}
+
+      <CreateSupplierModal
+        isOpen={supplierCreationOpen}
+        onClose={() => setSupplierCreationOpen(false)}
+        onSubmit={handleCreateAndLinkSupplier}
+      />
 
       <AlertDialog open={Boolean(costToDelete)} onOpenChange={(open) => { if (!open) setCostToDelete(null); }}>
         <AlertDialogContent>

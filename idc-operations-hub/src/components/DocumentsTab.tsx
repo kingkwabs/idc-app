@@ -20,6 +20,7 @@ import {
   listDocuments,
   uploadDocument,
 } from "../lib/api";
+import { formatEasternDate } from "../lib/dateTime";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
@@ -57,12 +58,6 @@ interface DocumentsTabProps {
   transactionId: number;
 }
 
-const documentDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
 function uiCategoryToApi(category: DocumentCategory): string {
   switch (category) {
     case "Client PO":
@@ -98,12 +93,6 @@ function formatBytes(bytes?: number | null): string | undefined {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Date unavailable";
-  return documentDateFormatter.format(date);
 }
 
 function documentType(mimeType?: string | null): UploadedFile["type"] {
@@ -278,7 +267,7 @@ export function DocumentsTab({ transactionId }: DocumentsTabProps) {
         category: apiCategoryToUi(document.category),
         uploadedBy: document.uploaded_by?.trim() || undefined,
         uploadedAt: document.uploaded_at,
-        date: formatDate(document.uploaded_at),
+        date: formatEasternDate(document.uploaded_at),
         size: formatBytes(document.size_bytes),
         type: documentType(document.mime_type),
       })));

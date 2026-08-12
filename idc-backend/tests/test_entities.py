@@ -1,6 +1,6 @@
 import database
 from conftest import csrf_headers, login
-from models import ActivityLog
+from models import ActivityLog, TransactionSupplierLink
 
 
 def test_client_creation_is_persisted_and_case_insensitive_unique(client):
@@ -135,3 +135,139 @@ def test_transactions_are_capped_filtered_sorted_and_paginated(client):
 		headers=csrf_headers(client),
 		json={"status": "not-a-real-workflow-status"},
 	).status_code == 400
+
+
+def test_supplier_overview_includes_sourcing_records_and_quotes(client):
+	assert login(client).status_code == 200
+	client_record = client.post(
+		"/api/clients",
+		headers=csrf_headers(client),
+		json={"name": "Atlas Industrial"},
+	).get_json()
+	supplier = client.post(
+		"/api/suppliers",
+		headers=csrf_headers(client),
+		json={
+			"name": "Meridian Controls",
+			"contact_name": "Maya Chen",
+			"category": "Control systems",
+		},
+	).get_json()
+	transaction = client.post(
+		"/api/transactions",
+		headers=csrf_headers(client),
+		json={
+			"client_id": client_record["id"],
+			"rfq_number": "RFQ-2048",
+			"date_received": "2026-08-12",
+			"item_description": "Turbine control panel",
+		},
+	).get_json()
+
+	assert client.post(
+		f"/api/transactions/{transaction['id']}/suppliers",
+		headers=csrf_headers(client),
+		json={"supplier_id": supplier["id"]},
+	).status_code == 201
+	assert client.post(
+		f"/api/transactions/{transaction['id']}/quotes",
+		headers=csrf_headers(client),
+		json={
+			"supplier_id": supplier["id"],
+			"amount": 12500,
+			"currency": "usd",
+			"lead_time_days": 21,
+			"notes": "Includes commissioning support",
+		},
+	).status_code == 201
+
+	# Preserve quotation-only history from records created before supplier links were enforced.
+	with database.db_session() as session:
+		link = session.query(TransactionSupplierLink).filter_by(
+			transaction_id=transaction["id"],
+			supplier_id=supplier["id"],
+		).one()
+		session.delete(link)
+
+	response = client.get(f"/api/suppliers/{supplier['id']}")
+	assert response.status_code == 200
+	payload = response.get_json()
+	assert payload["supplier"]["contact_name"] == "Maya Chen"
+	assert payload["summary"] == {
+		"sourcing_records": 1,
+		"active_transactions": 1,
+		"quotes": 1,
+	}
+	assert payload["items"] == [{
+		"transaction_id": transaction["id"],
+		"client_id": client_record["id"],
+		"client_name": "Atlas Industrial",
+		"rfq_number": "RFQ-2048",
+		"date_received": "2026-08-12",
+		"item_description": "Turbine control panel",
+		"status": None,
+		"quotes": [{
+			"id": payload["items"][0]["quotes"][0]["id"],
+			"amount": 12500.0,
+			"currency": "USD",
+			"lead_time_days": 21,
+			"notes": "Includes commissioning support",
+			"created_at": payload["items"][0]["quotes"][0]["created_at"],
+		}],
+	}]
+
+	metrics = client.get("/api/suppliers/metrics").get_json()["items"]
+	assert metrics == [{
+		"id": supplier["id"],
+		"name": "Meridian Controls",
+		"sourcing_records": 1,
+		"active_transactions": 1,
+		"quotes": 1,
+		"last_quoted": payload["items"][0]["quotes"][0]["created_at"],
+	}]
+	assert client.get("/api/suppliers/999999").status_code == 404
+
+
+def test_supplier_can_be_created_and_linked_atomically_from_transaction(client):
+	assert login(client).status_code == 200
+	client_record = client.post(
+		"/api/clients",
+		headers=csrf_headers(client),
+		json={"name": "Northstar Energy"},
+	).get_json()
+	transaction = client.post(
+		"/api/transactions",
+		headers=csrf_headers(client),
+		json={"client_id": client_record["id"], "item_description": "Emergency valve package"},
+	).get_json()
+
+	response = client.post(
+		f"/api/transactions/{transaction['id']}/suppliers/new",
+		headers=csrf_headers(client),
+		json={
+			"name": "Summit Valve Works",
+			"email": "quotes@summit.example",
+			"category": "OEM parts",
+		},
+	)
+	assert response.status_code == 201
+	created = response.get_json()
+	assert created["name"] == "Summit Valve Works"
+	assert client.get(f"/api/transactions/{transaction['id']}/suppliers").get_json() == {
+		"items": [{"id": created["id"], "name": "Summit Valve Works"}],
+	}
+
+	assert client.post(
+		f"/api/transactions/{transaction['id']}/suppliers/new",
+		headers=csrf_headers(client),
+		json={"name": "SUMMIT VALVE WORKS"},
+	).status_code == 409
+	assert client.post(
+		"/api/transactions/999999/suppliers/new",
+		headers=csrf_headers(client),
+		json={"name": "Should Not Persist"},
+	).status_code == 404
+	assert all(
+		supplier["name"] != "Should Not Persist"
+		for supplier in client.get("/api/suppliers").get_json()["items"]
+	)

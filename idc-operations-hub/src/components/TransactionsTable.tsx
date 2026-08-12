@@ -12,6 +12,7 @@ import {
   type TransactionOut,
   type TransactionYearCount,
 } from "../lib/api";
+import { formatCalendarDate } from "../lib/dateTime";
 import { getWorkflowStatusBadgeClass, getWorkflowStatusLabel } from "../lib/workflowStatus";
 import { ManualStatusChangeModal } from "./ManualStatusChangeModal";
 import { Badge } from "./ui/badge";
@@ -26,12 +27,6 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 2,
-});
-
-const rfqDateFormatter = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
 });
 
 const TABLE_COLUMN_COUNT = 10;
@@ -57,9 +52,7 @@ function formatPercent(value: number | null | undefined) {
 }
 
 function formatRfqDate(value: string | null | undefined) {
-  if (!value) return "—";
-  const date = new Date(`${value.slice(0, 10)}T12:00:00`);
-  return Number.isNaN(date.getTime()) ? value : rfqDateFormatter.format(date);
+  return formatCalendarDate(value, "—");
 }
 
 function getTransactionYearKey(transaction: TransactionOut): string {
@@ -105,9 +98,10 @@ function SuppliersBadges({ suppliers }: { suppliers: string[] }) {
 
 interface TransactionsTableProps {
   mode?: "recent" | "all";
+  onTransactionChanged?: () => void;
 }
 
-export function TransactionsTable({ mode = "recent" }: TransactionsTableProps) {
+export function TransactionsTable({ mode = "recent", onTransactionChanged }: TransactionsTableProps) {
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionOut | null>(null);
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [rows, setRows] = useState<TransactionOut[]>([]);
@@ -227,6 +221,7 @@ export function TransactionsTable({ mode = "recent" }: TransactionsTableProps) {
       setIsStatusModalOpen(false);
       setSelectedTransaction(null);
       await load();
+      onTransactionChanged?.();
       toast.success("Transaction status updated");
     } catch (updateError) {
       toast.error(updateError instanceof Error ? updateError.message : "Failed to update transaction status");

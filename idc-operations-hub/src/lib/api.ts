@@ -95,6 +95,8 @@ export type SupplierUpdate = Partial<SupplierCreate>;
 export interface SupplierMetricOut {
   id: number;
   name: string;
+  sourcing_records: number;
+  active_transactions: number;
   quotes: number;
   last_quoted?: string | null;
 }
@@ -103,6 +105,36 @@ export interface SupplierSummary {
   total_suppliers: number;
   engaged_suppliers: number;
   total_spend: number;
+}
+
+export interface SupplierOverviewQuote {
+  id: number;
+  amount: number;
+  currency?: string | null;
+  lead_time_days?: number | null;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface SupplierSourcingRecord {
+  transaction_id: number;
+  client_id: number;
+  client_name: string;
+  rfq_number?: string | null;
+  date_received?: string | null;
+  item_description?: string | null;
+  status?: string | null;
+  quotes: SupplierOverviewQuote[];
+}
+
+export interface SupplierOverview {
+  supplier: SupplierOut;
+  summary: {
+    sourcing_records: number;
+    active_transactions: number;
+    quotes: number;
+  };
+  items: SupplierSourcingRecord[];
 }
 
 export interface TransactionSummary {
@@ -455,6 +487,10 @@ export async function fetchSupplierMetrics(): Promise<{ items: SupplierMetricOut
   return apiRequest("/api/suppliers/metrics", {}, "Failed to fetch supplier metrics");
 }
 
+export async function fetchSupplierOverview(supplierId: number): Promise<SupplierOverview> {
+  return apiRequest(`/api/suppliers/${supplierId}`, {}, "Failed to fetch supplier overview");
+}
+
 export async function listDocuments(transactionId: number): Promise<{ items: Array<{ id: number; category: string; name: string; uploaded_by?: string; uploaded_at: string; mime_type?: string | null; size_bytes?: number | null; }>}> {
   return apiRequest(`/api/transactions/${transactionId}/documents`, {}, "Failed to fetch documents");
 }
@@ -503,6 +539,16 @@ export async function addTransactionSupplier(transactionId: number, supplier_id:
     method: "POST",
     body: JSON.stringify({ supplier_id }),
   }, "Failed to add transaction supplier");
+}
+
+export async function createAndLinkTransactionSupplier(
+  transactionId: number,
+  payload: SupplierCreate,
+): Promise<SupplierOut> {
+  return apiRequest(`/api/transactions/${transactionId}/suppliers/new`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, "Failed to create and link supplier");
 }
 
 export async function updateRefs(transactionId: number, payload: { rfq_number?: string; client_po_number?: string; supplier_po_number?: string }): Promise<{ ok: boolean }>{

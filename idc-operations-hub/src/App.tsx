@@ -14,6 +14,9 @@ import { useAuth } from "./lib/auth";
 const KPICards = lazy(() =>
   import("./components/KPICards").then(({ KPICards }) => ({ default: KPICards })),
 );
+const ActiveClientsOverview = lazy(() =>
+  import("./components/ActiveClientsOverview").then(({ ActiveClientsOverview }) => ({ default: ActiveClientsOverview })),
+);
 const TransactionsTable = lazy(() =>
   import("./components/TransactionsTable").then(({ TransactionsTable }) => ({ default: TransactionsTable })),
 );
@@ -28,6 +31,9 @@ const ClientsPage = lazy(() =>
 );
 const SuppliersPage = lazy(() =>
   import("./components/SuppliersPage").then(({ SuppliersPage }) => ({ default: SuppliersPage })),
+);
+const SupplierDetailPage = lazy(() =>
+  import("./components/SupplierDetailPage").then(({ SupplierDetailPage }) => ({ default: SupplierDetailPage })),
 );
 const EmployeesPage = lazy(() =>
   import("./components/EmployeesPage").then(({ EmployeesPage }) => ({ default: EmployeesPage })),
@@ -66,8 +72,16 @@ function AdminOnly({ isAdmin, children }: { isAdmin: boolean; children: ReactNod
   return isAdmin ? children : <Navigate to="/" replace />;
 }
 
+function getTransactionReturnPath(value?: string): string {
+  if (value === "/" || value === "/transactions" || /^\/suppliers\/\d+$/.test(value || "")) {
+    return value;
+  }
+  return "/transactions";
+}
+
 function TransactionWorkspace({ mode, onCreate }: { mode: "recent" | "all"; onCreate: () => void }) {
   const isRegister = mode === "all";
+  const [summaryRevision, setSummaryRevision] = useState(0);
 
   return (
     <div className="mx-auto w-full max-w-[96rem] space-y-6 p-4 sm:p-6 lg:p-8">
@@ -99,8 +113,16 @@ function TransactionWorkspace({ mode, onCreate }: { mode: "recent" | "all"; onCr
         </Button>
       </div>
 
-      {!isRegister && <KPICards />}
-      <TransactionsTable mode={mode} />
+      {!isRegister ? (
+        <>
+          <KPICards refreshKey={summaryRevision} />
+          <ActiveClientsOverview refreshKey={summaryRevision} />
+        </>
+      ) : null}
+      <TransactionsTable
+        mode={mode}
+        onTransactionChanged={isRegister ? undefined : () => setSummaryRevision((revision) => revision + 1)}
+      />
     </div>
   );
 }
@@ -145,9 +167,17 @@ export default function App() {
               ? "transactions"
               : "dashboard";
 
-  const transactionReturnTo = (
-    location.state as { transactionReturnTo?: string } | null
-  )?.transactionReturnTo === "/" ? "/" : "/transactions";
+  const transactionReturnState = location.state as {
+    transactionReturnTo?: string;
+    transactionBackLabel?: string;
+  } | null;
+  const requestedTransactionReturnTo = transactionReturnState?.transactionReturnTo;
+  const transactionReturnTo = getTransactionReturnPath(requestedTransactionReturnTo);
+  const transactionBackLabel = transactionReturnTo === "/"
+    ? "Recent transactions"
+    : transactionReturnTo === "/transactions"
+      ? "All transactions"
+      : transactionReturnState?.transactionBackLabel?.trim() || "Supplier record";
 
   const handleSidebarNavigate = (view: SidebarView) => {
     const destinations: Partial<Record<SidebarView, string>> = {
@@ -205,13 +235,14 @@ export default function App() {
                   <div className="p-4 sm:p-6 lg:p-8">
                     <TransactionDetail
                       onBack={() => navigate(transactionReturnTo)}
-                      backLabel={transactionReturnTo === "/" ? "Recent transactions" : "All transactions"}
+                      backLabel={transactionBackLabel}
                     />
                   </div>
                 )}
               />
               <Route path="/clients" element={<div className="p-4 sm:p-6 lg:p-8"><ClientsPage /></div>} />
               <Route path="/suppliers" element={<div className="p-4 sm:p-6 lg:p-8"><SuppliersPage /></div>} />
+              <Route path="/suppliers/:id" element={<div className="p-4 sm:p-6 lg:p-8"><SupplierDetailPage /></div>} />
               <Route path="/employees" element={<AdminOnly isAdmin={isAdmin}><div className="p-4 sm:p-6 lg:p-8"><EmployeesPage /></div></AdminOnly>} />
               <Route path="/quickbooks" element={<AdminOnly isAdmin={isAdmin}><div className="p-4 sm:p-6 lg:p-8"><QuickBooksSettingsPage userRole={user.role} /></div></AdminOnly>} />
               <Route path="/profile" element={<div className="p-4 sm:p-6 lg:p-8"><ProfilePage /></div>} />

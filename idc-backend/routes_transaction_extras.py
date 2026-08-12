@@ -13,10 +13,13 @@ from schemas import (
 	AssociatedCostCreate,
 	AssociatedCostUpdate,
 	ShipmentUpdate,
+	SupplierCreate,
 	SupplierLinkCreate,
+	SupplierOut,
 	SupplierQuoteCreate,
 	TransactionReferencesUpdate,
 )
+from supplier_service import SupplierNameConflictError, create_supplier_record
 
 bp = Blueprint('transaction_extras', __name__, url_prefix='/api/transactions')
 
@@ -140,6 +143,33 @@ def add_transaction_supplier(trx_id: int):
 		session.add(link)
 		session.add(ActivityLog(transaction_id=trx_id, action="supplier-linked", details=f"Linked supplier {sup.name}"))
 		return jsonify({"ok": True}), 201
+
+
+@bp.post('/<int:trx_id>/suppliers/new')
+def create_and_link_transaction_supplier(trx_id: int):
+	try:
+		payload = SupplierCreate(**(request.get_json(silent=True) or {}))
+	except ValidationError as exc:
+		return _validation_error(exc)
+
+	with db_session() as session:
+		trx = session.execute(
+			select(Transaction).where(Transaction.id == trx_id).with_for_update()
+		).scalar_one_or_none()
+		if trx is None:
+			return jsonify({"error": "Not found"}), 404
+		try:
+			supplier = create_supplier_record(session, payload)
+		except SupplierNameConflictError:
+			return jsonify({"error": "supplier_exists"}), 409
+
+		session.add(TransactionSupplierLink(transaction_id=trx_id, supplier_id=supplier.id))
+		session.add(ActivityLog(
+			transaction_id=trx_id,
+			action="supplier-created-and-linked",
+			details=f"Created and linked supplier {supplier.name}",
+		))
+		return jsonify(SupplierOut.model_validate(supplier).model_dump(mode="json")), 201
 
 
 @bp.get('/<int:trx_id>/documents')

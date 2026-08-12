@@ -21,6 +21,7 @@ import {
   getQuickBooksStatus,
   type QuickBooksStatus,
 } from "../lib/api";
+import { formatEasternDateTime, parseApiTimestamp } from "../lib/dateTime";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -35,18 +36,12 @@ interface QuickBooksSettingsPageProps {
 }
 
 function formatDate(value?: string) {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Not available";
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return formatEasternDateTime(value, "Not available");
 }
 
 function daysUntil(value?: string) {
   if (!value) return null;
-  const timestamp = new Date(value).getTime();
+  const timestamp = parseApiTimestamp(value).getTime();
   if (Number.isNaN(timestamp)) return null;
   return Math.ceil((timestamp - Date.now()) / (1000 * 60 * 60 * 24));
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, Clock3 } from "lucide-react";
 
 import { listActivity } from "../lib/api";
+import { formatEasternDateTime } from "../lib/dateTime";
 import { Skeleton } from "./ui/skeleton";
 
 interface ActivityLogProps {
@@ -15,14 +16,6 @@ interface ActivityItem {
   created_at: string;
 }
 
-const timestampFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Activity history is unavailable";
 }
@@ -30,12 +23,6 @@ function errorMessage(error: unknown): string {
 function formatAction(action: string): string {
   const label = action.replace(/[-_]+/g, " ").trim();
   return label ? label.charAt(0).toUpperCase() + label.slice(1) : "Transaction updated";
-}
-
-function formatTimestamp(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Time unavailable";
-  return timestampFormatter.format(date);
 }
 
 export function ActivityLog({ transactionId }: ActivityLogProps) {
@@ -118,7 +105,7 @@ export function ActivityLog({ transactionId }: ActivityLogProps) {
                   {activity.details ? <span className="text-muted-foreground">: {activity.details}</span> : null}
                 </p>
                 <time dateTime={activity.created_at} className="mt-1 block text-xs text-muted-foreground">
-                  {formatTimestamp(activity.created_at)}
+                  {formatEasternDateTime(activity.created_at, "Time unavailable")}
                 </time>
               </div>
             </li>

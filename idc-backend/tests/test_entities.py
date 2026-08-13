@@ -38,8 +38,39 @@ def test_supplier_creation_is_persisted_and_validated(client):
 		},
 	)
 	assert response.status_code == 201
-	assert response.get_json()["category"] == "Electrical Components"
+	supplier = response.get_json()
+	assert supplier["category"] == "Electrical Components"
 	assert client.get("/api/suppliers").get_json()["items"][0]["name"] == "Northstar Components"
+
+	updated = client.put(
+		f"/api/suppliers/{supplier['id']}",
+		headers=csrf_headers(client),
+		json={
+			"contact_name": "Katherine Johnson",
+			"website": "https://northstar.example",
+			"notes": "Preferred electrical sourcing partner",
+		},
+	)
+	assert updated.status_code == 200
+	assert updated.get_json()["contact_name"] == "Katherine Johnson"
+	assert updated.get_json()["website"] == "https://northstar.example"
+	assert client.get("/api/suppliers").get_json()["items"][0]["notes"] == "Preferred electrical sourcing partner"
+
+	other_supplier = client.post(
+		"/api/suppliers",
+		headers=csrf_headers(client),
+		json={"name": "Meridian Supply"},
+	).get_json()
+	assert client.put(
+		f"/api/suppliers/{other_supplier['id']}",
+		headers=csrf_headers(client),
+		json={"name": "NORTHSTAR COMPONENTS"},
+	).status_code == 409
+	assert client.put(
+		"/api/suppliers/999999",
+		headers=csrf_headers(client),
+		json={"notes": "Missing supplier"},
+	).status_code == 404
 	assert client.post(
 		"/api/suppliers",
 		headers=csrf_headers(client),

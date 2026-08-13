@@ -6,14 +6,17 @@ import {
   Factory,
   Mail,
   MapPin,
+  Pencil,
   Phone,
   RefreshCw,
 } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router-dom";
+import { toast } from "sonner";
 
-import { fetchSupplierOverview, type SupplierOverview } from "../lib/api";
+import { fetchSupplierOverview, updateSupplier, type SupplierCreate, type SupplierOverview } from "../lib/api";
 import { formatCalendarDate, formatEasternDateTime } from "../lib/dateTime";
 import { getWorkflowStatusBadgeClass, getWorkflowStatusLabel } from "../lib/workflowStatus";
+import { SupplierForm } from "./SupplierForm";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
@@ -57,6 +60,7 @@ export function SupplierDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     if (!Number.isInteger(supplierId) || supplierId <= 0) {
@@ -66,6 +70,7 @@ export function SupplierDetailPage() {
     }
 
     let cancelled = false;
+    setIsEditing(false);
     setLoading(true);
     setError(null);
 
@@ -119,6 +124,13 @@ export function SupplierDetailPage() {
 
   const { supplier, summary, items } = overview;
   const website = safeWebsite(supplier.website);
+  const handleUpdateSupplier = async (payload: SupplierCreate) => {
+    const updatedSupplier = await updateSupplier(supplier.id, payload);
+    setOverview((current) => current ? { ...current, supplier: updatedSupplier } : current);
+    toast.success("Supplier record updated", {
+      description: `${updatedSupplier.name}'s profile changes were saved.`,
+    });
+  };
 
   return (
     <div className="mx-auto w-full max-w-[96rem] space-y-6">
@@ -154,12 +166,32 @@ export function SupplierDetailPage() {
       </section>
 
       <section aria-labelledby="supplier-profile-title" className="overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)]">
-        <header className="border-b bg-secondary px-5 py-4">
-          <h2 id="supplier-profile-title" className="text-base font-semibold tracking-tight text-foreground">Supplier profile</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">Contact details and internal sourcing context.</p>
+        <header className="flex flex-col gap-3 border-b bg-secondary px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 id="supplier-profile-title" className="text-base font-semibold tracking-tight text-foreground">Supplier profile</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {isEditing ? "Update the supplier's contact and sourcing information." : "Contact details and internal sourcing context."}
+            </p>
+          </div>
+          {!isEditing ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsEditing(true)} className="self-start">
+              <Pencil aria-hidden="true" />Edit supplier
+            </Button>
+          ) : null}
         </header>
-        <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
-          <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+        {isEditing ? (
+          <div className="p-5">
+            <SupplierForm
+              mode="edit"
+              initialSupplier={supplier}
+              onCancel={() => setIsEditing(false)}
+              onSuccess={() => setIsEditing(false)}
+              onSubmit={handleUpdateSupplier}
+            />
+          </div>
+        ) : (
+          <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
+            <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Primary contact</dt>
               <dd className="mt-1 text-sm text-foreground">{supplier.contact_name || "Not recorded"}</dd>
@@ -205,12 +237,13 @@ export function SupplierDetailPage() {
                 {supplier.address || "Not recorded"}
               </dd>
             </div>
-          </dl>
-          <div className="border-t pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Internal notes</h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{supplier.notes || "No internal supplier notes have been recorded."}</p>
+            </dl>
+            <div className="border-t pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+              <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Internal notes</h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{supplier.notes || "No internal supplier notes have been recorded."}</p>
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       <section aria-labelledby="supplier-sourcing-title" className="overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-card)]">
